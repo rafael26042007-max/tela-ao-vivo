@@ -4,6 +4,8 @@
 const crypto = require('crypto');
 const config = require('./config');
 const { criarRouter, criarTransporte } = require('./midia');
+const { gerarHash, conferir } = require('./senha');
+const limites = require('./limites');
 
 // Sem 0/O e 1/I pra ninguém confundir na hora de digitar o código
 const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -41,9 +43,10 @@ function enviar(ws, evento, dados) {
 // Classe Sala
 // =====================================================
 class Sala {
-  constructor(codigo, router) {
+  constructor(codigo, router, senhaGuardada = null) {
     this.codigo = codigo;
     this.router = router;
+    this.senhaGuardada = senhaGuardada; // { sal, hash } ou null (sala aberta)
     /** @type {Map<string, Participante>} */
     this.participantes = new Map();
     this.chat = []; // últimas mensagens (quem entra depois vê o histórico)
@@ -160,21 +163,26 @@ function resumoProdutor(produtor, dono) {
 // =====================================================
 // Criar sala (chamado pela rota POST /api/salas)
 // =====================================================
-async function criarSala() {
+async function criarSala({ senha } = {}) {
   if (salas.size >= config.maxSalas) {
     throw new Error('O servidor atingiu o limite de salas. Tente mais tarde.');
   }
+  const senhaTexto = String(senha ?? '');
+  if (senhaTexto.length > config.tamanhoMaxSenha) throw new Error('Senha muito longa.');
+  const senhaGuardada = senhaTexto ? await gerarHash(senhaTexto) : null;
+
   const router = await criarRouter();
   const codigo = gerarCodigo();
-  salas.set(codigo, new Sala(codigo, router));
-  console.log(`Sala ${codigo} criada`);
+  salas.set(codigo, new Sala(codigo, router, senhaGuardada));
+  console.log(`Sala ${codigo} criada${senhaGuardada ? ' (com senha)' : ''}`);
   return codigo;
 }
 
+// Usado pela tela inicial pra saber se precisa pedir senha
 function infoSala(codigoBruto) {
   const sala = salas.get(normalizarCodigo(codigoBruto));
   if (!sala) return { existe: false };
-  return { existe: true, codigo: sala.codigo, pessoas: sala.participantes.size };
+  return { existe: true, codigo: sala.codigo, temSenha: !!sala.senhaGuardada };
 }
 
 // =====================================================
@@ -183,7 +191,7 @@ function infoSala(codigoBruto) {
 //          servidor -> { id, ok, dados | erro }   (resposta)
 //          servidor -> { evento, dados }          (aviso)
 // =====================================================
-function tratarConexao(ws) {
+function tratarConexao(ws, ip) {
   /** @type {Participante | null} */
   let participante = null;
 
@@ -207,10 +215,29 @@ function tratarConexao(ws) {
   // ---------- Métodos que o navegador pode chamar ----------
   const metodos = {
     // Entrar numa sala com o código
-    async entrar({ codigo, nome }) {
+    async entrar({ codigo, nome, senha }) {
       if (participante) throw new Error('Você já está numa sala');
+
+      // ---------- Anti-chute: muitos erros seguidos bloqueiam o IP por um tempo ----------
+      if (!limites.tentativasErradas.pode(ip)) {
+        throw new Error('Muitas tentativas erradas. Espere alguns minutos.');
+      }
+
       const s = salas.get(normalizarCodigo(codigo));
-      if (!s) throw new Error('Sala não encontrada. Confira o código.');
+      if (!s) {
+        limites.tentativasErradas.registrar(ip);
+        throw new Error('Sala não encontrada. Confira o código.');
+      }
+
+      // ---------- Senha (só se a sala tiver) ----------
+      if (s.senhaGuardada) {
+        if (!senha) throw new Error('Esta sala tem senha.');
+        if (!(await conferir(String(senha).slice(0, config.tamanhoMaxSenha), s.senhaGuardada))) {
+          limites.tentativasErradas.registrar(ip);
+          throw new Error('Senha incorreta.');
+        }
+      }
+
       if (s.participantes.size >= config.maxPessoasPorSala) throw new Error('A sala está cheia.');
 
       participante = new Participante(ws, s, limparTexto(nome, 30) || 'Anônimo');
@@ -220,6 +247,7 @@ function tratarConexao(ws) {
 
       return {
         codigo: s.codigo,
+        temSenha: !!s.senhaGuardada,
         meuId: participante.id,
         rtpCapabilities: s.router.rtpCapabilities,
         participantes: [...s.participantes.values()].map((p) => p.resumo()),
@@ -258,6 +286,14 @@ function tratarConexao(ws) {
       if (kind !== 'video' && kind !== 'audio') throw new Error('Tipo de mídia inválido');
       const jaTemDoTipo = [...participante.produtores.values()].some((p) => p.kind === kind);
       if (jaTemDoTipo) throw new Error('Você já está transmitindo');
+
+      // ---------- Limite de telas ao mesmo tempo na sala ----------
+      if (kind === 'video') {
+        const telas = sala().todosProdutores().filter((p) => p.kind === 'video').length;
+        if (telas >= config.maxTransmissoesPorSala) {
+          throw new Error(`A sala já tem ${telas} telas sendo transmitidas (máximo ${config.maxTransmissoesPorSala}).`);
+        }
+      }
 
       const t = obterTransporte(transporteId, 'envio');
       const tipo = kind === 'video' ? 'tela' : 'audio';

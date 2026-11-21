@@ -27,14 +27,19 @@
       <section class="cartao">
         <h2>Criar uma sala</h2>
         <p>Você recebe um código pra passar pros outros.</p>
+        <input id="campo-senha-criar" type="password" maxlength="64" placeholder="Senha (opcional)" autocomplete="new-password">
         <button id="botao-criar" class="botao principal">Criar sala</button>
       </section>
 
       <section class="cartao">
         <h2>Entrar numa sala</h2>
-        <form id="form-entrar" class="linha">
-          <input id="campo-codigo" type="text" maxlength="7" placeholder="CÓDIGO" autocomplete="off" spellcheck="false">
-          <button class="botao" type="submit">Entrar</button>
+        <form id="form-entrar" class="coluna">
+          <div class="linha">
+            <input id="campo-codigo" type="text" maxlength="7" placeholder="CÓDIGO" autocomplete="off" spellcheck="false">
+            <button class="botao" type="submit">Entrar</button>
+          </div>
+          <!-- Só aparece se a sala tiver senha -->
+          <input id="campo-senha-entrar" type="password" maxlength="64" placeholder="Senha da sala" autocomplete="current-password" hidden>
         </form>
       </section>
     </div>
@@ -57,6 +62,7 @@
       <div class="codigo-sala">
         <span>Código</span>
         <strong id="texto-codigo">------</strong>
+        <span id="icone-senha" title="Sala com senha" hidden>🔒</span>
         <button id="botao-copiar" class="botao pequeno">Copiar link</button>
       </div>
 

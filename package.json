@@ -6,7 +6,7 @@
   "scripts": {
     "build": "esbuild web/src/app.js --bundle --minify --sourcemap --target=es2020 --outfile=web/dist/app.js",
     "start": "npm run build && node server/index.js",
-    "dev": "npm run build -- --watch=forever & node --watch server/index.js"
+    "dev": "node scripts/dev.js"
   },
   "engines": {
     "node": ">=20"

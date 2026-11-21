@@ -14,6 +14,9 @@ const el = {
   telaSala: $('tela-sala'),
   campoNome: $('campo-nome'),
   campoCodigo: $('campo-codigo'),
+  campoSenhaCriar: $('campo-senha-criar'),
+  campoSenhaEntrar: $('campo-senha-entrar'),
+  iconeSenha: $('icone-senha'),
   botaoCriar: $('botao-criar'),
   formEntrar: $('form-entrar'),
   erroInicio: $('erro-inicio'),
@@ -108,10 +111,15 @@ el.botaoCriar.addEventListener('click', async () => {
   setCarregando(true);
   mostrarErroInicio('');
   try {
-    const resposta = await fetch('/api/salas', { method: 'POST' });
+    const senha = el.campoSenhaCriar.value;
+    const resposta = await fetch('/api/salas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senha }),
+    });
     const dados = await resposta.json();
     if (!resposta.ok) throw new Error(dados.erro || 'Erro ao criar a sala');
-    await entrarNaSala(dados.codigo);
+    await entrarNaSala(dados.codigo, senha);
   } catch (erro) {
     mostrarErroInicio(erro.message);
     setCarregando(false);
@@ -119,7 +127,7 @@ el.botaoCriar.addEventListener('click', async () => {
 });
 
 // ---------- Entrar com código ----------
-el.formEntrar.addEventListener('submit', (e) => {
+el.formEntrar.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!validarNome()) return;
   const codigo = normalizarCodigo(el.campoCodigo.value);
@@ -128,11 +136,37 @@ el.formEntrar.addEventListener('submit', (e) => {
     el.campoCodigo.focus();
     return;
   }
-  entrarNaSala(codigo);
+
+  // ---------- Campo de senha ainda escondido? Pergunta se a sala tem senha ----------
+  if (el.campoSenhaEntrar.hidden) {
+    setCarregando(true);
+    try {
+      const resposta = await fetch(`/api/salas/${codigo}`);
+      const info = await resposta.json();
+      if (!resposta.ok) throw new Error(info.erro || 'Erro ao procurar a sala');
+      if (!info.existe) throw new Error('Sala não encontrada. Confira o código.');
+      if (info.temSenha) {
+        el.campoSenhaEntrar.hidden = false;
+        el.campoSenhaEntrar.focus();
+        mostrarErroInicio('Esta sala tem senha. Digite e clique em Entrar.');
+        return;
+      }
+    } catch (erro) {
+      mostrarErroInicio(erro.message);
+      return;
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  entrarNaSala(codigo, el.campoSenhaEntrar.value);
 });
 
 el.campoCodigo.addEventListener('input', () => {
   el.campoCodigo.value = normalizarCodigo(el.campoCodigo.value);
+  // Trocou o código -> esconde a senha de novo (pode ser outra sala)
+  el.campoSenhaEntrar.hidden = true;
+  el.campoSenhaEntrar.value = '';
 });
 
 function validarNome() {
@@ -149,7 +183,7 @@ function validarNome() {
 // =====================================================
 // ENTRAR NA SALA
 // =====================================================
-async function entrarNaSala(codigo) {
+async function entrarNaSala(codigo, senha = '') {
   setCarregando(true);
   mostrarErroInicio('');
 
@@ -164,7 +198,7 @@ async function entrarNaSala(codigo) {
     estado.sinal = sinal;
     registrarEventos(sinal);
 
-    const info = await sinal.pedir('entrar', { codigo, nome: el.campoNome.value.trim() });
+    const info = await sinal.pedir('entrar', { codigo, nome: el.campoNome.value.trim(), senha });
     estado.codigo = info.codigo;
     estado.meuId = info.meuId;
     for (const p of info.participantes) estado.pessoas.set(p.id, p.nome);
@@ -178,6 +212,7 @@ async function entrarNaSala(codigo) {
     el.telaInicio.hidden = true;
     el.telaSala.hidden = false;
     el.textoCodigo.textContent = info.codigo;
+    el.iconeSenha.hidden = !info.temSenha;
     document.title = `Sala ${info.codigo} · Tela ao Vivo`;
     history.replaceState(null, '', `/?sala=${info.codigo}`);
     prepararControles();
