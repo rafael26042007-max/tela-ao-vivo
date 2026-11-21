@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tela ao Vivo</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- =================================================
+       TELA 1: Início (nome + criar sala / entrar com código)
+       ================================================= -->
+  <main id="tela-inicio" class="inicio">
+    <div class="marca">
+      <span class="ponto-ao-vivo"></span>
+      <h1>Tela ao Vivo</h1>
+    </div>
+    <p class="subtitulo">Compartilhe a tela com várias pessoas, direto do navegador.</p>
+
+    <label class="campo">
+      <span>Seu nome</span>
+      <input id="campo-nome" type="text" maxlength="30" placeholder="Como vão te chamar?" autocomplete="nickname">
+    </label>
+
+    <div class="cartoes">
+      <section class="cartao">
+        <h2>Criar uma sala</h2>
+        <p>Você recebe um código pra passar pros outros.</p>
+        <button id="botao-criar" class="botao principal">Criar sala</button>
+      </section>
+
+      <section class="cartao">
+        <h2>Entrar numa sala</h2>
+        <form id="form-entrar" class="linha">
+          <input id="campo-codigo" type="text" maxlength="7" placeholder="CÓDIGO" autocomplete="off" spellcheck="false">
+          <button class="botao" type="submit">Entrar</button>
+        </form>
+      </section>
+    </div>
+
+    <p id="erro-inicio" class="erro" role="alert"></p>
+  </main>
+
+  <!-- =================================================
+       TELA 2: Sala
+       ================================================= -->
+  <div id="tela-sala" class="sala" hidden>
+
+    <!-- ---------- Barra do topo ---------- -->
+    <header class="topo">
+      <div class="marca pequena">
+        <span class="ponto-ao-vivo"></span>
+        <strong>Tela ao Vivo</strong>
+      </div>
+
+      <div class="codigo-sala">
+        <span>Código</span>
+        <strong id="texto-codigo">------</strong>
+        <button id="botao-copiar" class="botao pequeno">Copiar link</button>
+      </div>
+
+      <button id="botao-sair" class="botao perigo pequeno">Sair</button>
+    </header>
+
+    <!-- ---------- Controles de transmissão ---------- -->
+    <section class="controles">
+      <label>
+        Qualidade
+        <select id="select-qualidade">
+          <option value="economia">Economia (720p, 10 fps)</option>
+          <option value="equilibrado" selected>Equilibrado (1080p, 15 fps)</option>
+          <option value="fluido">Fluido (1080p, 30 fps)</option>
+        </select>
+      </label>
+      <label>
+        Codec
+        <select id="select-codec"></select>
+      </label>
+      <label class="checkbox">
+        <input id="check-audio" type="checkbox">
+        Compartilhar áudio
+      </label>
+      <button id="botao-transmitir" class="botao principal">Transmitir minha tela</button>
+      <span id="info-espectadores" class="info"></span>
+    </section>
+
+    <p id="aviso-sala" class="aviso" hidden></p>
+
+    <!-- ---------- Conteúdo: telas + lateral ---------- -->
+    <div class="conteudo">
+      <section id="grade-telas" class="grade">
+        <div id="vazio" class="vazio">
+          <p>Ninguém está transmitindo ainda.</p>
+          <p>Clique em <strong>Transmitir minha tela</strong> ou espere alguém começar.</p>
+        </div>
+      </section>
+
+      <aside class="lateral">
+        <div class="bloco">
+          <h3>Pessoas <span id="contador-pessoas">0</span></h3>
+          <ul id="lista-pessoas" class="pessoas"></ul>
+        </div>
+
+        <div class="bloco chat">
+          <h3>Chat</h3>
+          <ul id="lista-chat" class="mensagens"></ul>
+          <form id="form-chat" class="linha">
+            <input id="campo-chat" type="text" maxlength="500" placeholder="Mensagem..." autocomplete="off">
+            <button class="botao" type="submit">Enviar</button>
+          </form>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Áudios das transmissões ficam aqui (invisíveis) -->
+    <div id="audios" hidden></div>
+  </div>
+
+  <script src="/dist/app.js"></script>
+</body>
+</html>
