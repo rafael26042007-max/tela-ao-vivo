@@ -28,7 +28,7 @@ async function obterCertificado(config) {
   // -----------------------------------------------------
   try {
     const info = JSON.parse(fs.readFileSync(ARQ_INFO, 'utf8'));
-    if (info.ip === config.ipAnunciado && new Date(info.validoAte) > new Date()) {
+    if (info.ip === config.ipLocal && new Date(info.validoAte) > new Date()) {
       return { cert: fs.readFileSync(ARQ_CERT), key: fs.readFileSync(ARQ_CHAVE) };
     }
   } catch {
@@ -53,7 +53,7 @@ async function obterCertificado(config) {
         altNames: [
           { type: 2, value: 'localhost' },
           { type: 7, ip: '127.0.0.1' },
-          { type: 7, ip: config.ipAnunciado },
+          { type: 7, ip: config.ipLocal },
         ],
       },
     ],
@@ -62,7 +62,7 @@ async function obterCertificado(config) {
   fs.mkdirSync(PASTA, { recursive: true });
   fs.writeFileSync(ARQ_CERT, pems.cert);
   fs.writeFileSync(ARQ_CHAVE, pems.private, { mode: 0o600 });
-  fs.writeFileSync(ARQ_INFO, JSON.stringify({ ip: config.ipAnunciado, validoAte }));
+  fs.writeFileSync(ARQ_INFO, JSON.stringify({ ip: config.ipLocal, validoAte }));
   return { cert: pems.cert, key: pems.private };
 }
 

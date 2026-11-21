@@ -1,12 +1,11 @@
 {
   "name": "tela-ao-vivo",
-  "version": "1.0.0",
-  "description": "Site de transmissão de tela ao vivo com salas e código de entrada. Várias pessoas podem transmitir; o servidor (SFU mediasoup) repassa o vídeo sem recodificar.",
+  "version": "2.0.0",
+  "description": "Site de transmissão de tela ao vivo com salas e código de entrada. O vídeo vai direto entre os navegadores (P2P); o servidor só faz a sinalização.",
   "main": "server/index.js",
   "scripts": {
-    "build": "esbuild web/src/app.js --bundle --minify --sourcemap --target=es2020 --outfile=web/dist/app.js",
-    "start": "npm run build && node server/index.js",
-    "dev": "node scripts/dev.js"
+    "start": "node server/index.js",
+    "dev": "node --watch-path=server server/index.js"
   },
   "engines": {
     "node": ">=20"
@@ -15,20 +14,15 @@
     "type": "git",
     "url": "git+https://github.com/rafael26042007-max/tela-ao-vivo.git"
   },
-  "keywords": ["webrtc", "sfu", "mediasoup", "compartilhar-tela", "screen-share"],
+  "keywords": ["webrtc", "p2p", "compartilhar-tela", "screen-share", "websocket"],
   "author": "Rafael",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/rafael26042007-max/tela-ao-vivo/issues"
   },
-  "homepage": "https://github.com/rafael26042007-max/tela-ao-vivo#readme",
+  "homepage": "https://rafael26042007-max.github.io/tela-ao-vivo/",
   "dependencies": {
-    "mediasoup": "^3.32.2",
     "selfsigned": "^5.5.0",
     "ws": "^8.23.0"
-  },
-  "devDependencies": {
-    "esbuild": "^0.28.2",
-    "mediasoup-client": "^3.26.0"
   }
 }

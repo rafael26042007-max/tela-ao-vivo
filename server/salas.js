@@ -1,9 +1,14 @@
 // =====================================================
-// Salas, códigos de entrada e participantes
+// Salas, códigos de entrada, participantes e sinalização P2P
+//
+// O vídeo NÃO passa por aqui: vai direto de um navegador pro outro.
+// Este servidor só:
+//   - guarda as salas (código, senha, quem está dentro, chat)
+//   - repassa as mensagens que os navegadores trocam pra se conectar
+//     (oferta/resposta SDP e candidatos ICE)
 // =====================================================
 const crypto = require('crypto');
 const config = require('./config');
-const { criarRouter, criarTransporte } = require('./midia');
 const { gerarHash, conferir } = require('./senha');
 const limites = require('./limites');
 
@@ -36,16 +41,21 @@ function limparTexto(texto, max) {
 }
 
 function enviar(ws, evento, dados) {
-  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ evento, dados }));
+  if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ evento, dados }));
+}
+
+function mesmoToken(a, b) {
+  const x = Buffer.from(String(a ?? ''));
+  const y = Buffer.from(String(b ?? ''));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
 }
 
 // =====================================================
 // Classe Sala
 // =====================================================
 class Sala {
-  constructor(codigo, router, senhaGuardada = null) {
+  constructor(codigo, senhaGuardada = null) {
     this.codigo = codigo;
-    this.router = router;
     this.senhaGuardada = senhaGuardada; // { sal, hash } ou null (sala aberta)
     /** @type {Map<string, Participante>} */
     this.participantes = new Map();
@@ -67,8 +77,10 @@ class Sala {
 
   fechar() {
     this.cancelarFechamento();
-    for (const p of this.participantes.values()) p.ws.close(4000, 'Sala encerrada');
-    this.router.close(); // fecha transportes, produtores e consumidores juntos
+    for (const p of this.participantes.values()) {
+      clearTimeout(p.timerSaida);
+      p.ws?.close(4000, 'Sala encerrada');
+    }
     salas.delete(this.codigo);
     console.log(`Sala ${this.codigo} fechada`);
   }
@@ -80,53 +92,20 @@ class Sala {
     }
   }
 
-  // ---------- Procura produtores (telas/áudios sendo transmitidos) ----------
-  todosProdutores() {
-    const lista = [];
-    for (const p of this.participantes.values()) {
-      for (const produtor of p.produtores.values()) lista.push(produtor);
-    }
-    return lista;
+  quantosTransmitindo() {
+    return [...this.participantes.values()].filter((p) => p.transmitindo).length;
   }
 
-  acharProdutor(produtorId) {
-    return this.todosProdutores().find((p) => p.id === produtorId) ?? null;
+  resumo() {
+    return [...this.participantes.values()].map((p) => p.resumo());
   }
 
-  consumidoresDe(produtorId) {
-    const lista = [];
-    for (const p of this.participantes.values()) {
-      for (const c of p.consumidores.values()) if (c.producerId === produtorId) lista.push(c);
-    }
-    return lista;
-  }
-
-  // ---------------------------------------------------
-  // Economia de processamento:
-  // se ninguém está assistindo uma tela, avisa quem transmite
-  // pra PAUSAR o envio (o navegador para de codificar o vídeo).
-  // Também manda quantas pessoas estão assistindo.
-  // ---------------------------------------------------
-  atualizarEspectadores(produtor) {
-    if (!produtor || produtor.closed) return;
-    const assistindo = this.consumidoresDe(produtor.id).filter((c) => !c.closed && !c.paused);
-    const quantidade = assistindo.length;
-    if (produtor.appData.espectadores === quantidade) return;
-
-    const estavaAtivo = produtor.appData.espectadores > 0;
-    produtor.appData.espectadores = quantidade;
-
-    const dono = this.participantes.get(produtor.appData.participanteId);
-    if (dono) enviar(dono.ws, 'controleEnvio', { produtorId: produtor.id, espectadores: quantidade });
-
-    // Voltou a ter alguém assistindo -> pede um quadro-chave pra imagem aparecer rápido
-    if (!estavaAtivo && quantidade > 0 && produtor.kind === 'video') {
-      setTimeout(() => {
-        for (const c of this.consumidoresDe(produtor.id)) {
-          if (!c.closed && !c.paused) c.requestKeyFrame().catch(() => {});
-        }
-      }, 800);
-    }
+  // ---------- Remove alguém de vez ----------
+  remover(participante) {
+    clearTimeout(participante.timerSaida);
+    if (!this.participantes.delete(participante.id)) return;
+    this.enviarParaTodos('participanteSaiu', { id: participante.id });
+    if (this.participantes.size === 0 && salas.has(this.codigo)) this.agendarFechamento();
   }
 }
 
@@ -136,27 +115,34 @@ class Sala {
 class Participante {
   constructor(ws, sala, nome) {
     this.id = crypto.randomUUID();
+    this.token = crypto.randomBytes(24).toString('base64url'); // pra reconectar se a conexão cair
     this.ws = ws;
     this.sala = sala;
     this.nome = nome;
-    this.transportes = new Map();
-    this.produtores = new Map();
-    this.consumidores = new Map();
+    this.transmitindo = false;
+    this.timerSaida = null;
     this.ultimasMensagens = []; // pra limitar spam no chat
   }
 
   resumo() {
-    return { id: this.id, nome: this.nome };
+    return { id: this.id, nome: this.nome, transmitindo: this.transmitindo };
   }
 }
 
-function resumoProdutor(produtor, dono) {
+// Estado da sala que o navegador recebe ao entrar (ou reconectar)
+function estadoParaCliente(sala, participante) {
   return {
-    produtorId: produtor.id,
-    participanteId: dono.id,
-    nome: dono.nome,
-    kind: produtor.kind,
-    tipo: produtor.appData.tipo,
+    codigo: sala.codigo,
+    temSenha: !!sala.senhaGuardada,
+    meuId: participante.id,
+    token: participante.token,
+    participantes: sala.resumo(),
+    chat: sala.chat,
+    iceServers: config.iceServers,
+    limites: {
+      maxPessoas: config.maxPessoasPorSala,
+      maxTransmissoes: config.maxTransmissoesPorSala,
+    },
   };
 }
 
@@ -171,9 +157,8 @@ async function criarSala({ senha } = {}) {
   if (senhaTexto.length > config.tamanhoMaxSenha) throw new Error('Senha muito longa.');
   const senhaGuardada = senhaTexto ? await gerarHash(senhaTexto) : null;
 
-  const router = await criarRouter();
   const codigo = gerarCodigo();
-  salas.set(codigo, new Sala(codigo, router, senhaGuardada));
+  salas.set(codigo, new Sala(codigo, senhaGuardada));
   console.log(`Sala ${codigo} criada${senhaGuardada ? ' (com senha)' : ''}`);
   return codigo;
 }
@@ -182,7 +167,18 @@ async function criarSala({ senha } = {}) {
 function infoSala(codigoBruto) {
   const sala = salas.get(normalizarCodigo(codigoBruto));
   if (!sala) return { existe: false };
-  return { existe: true, codigo: sala.codigo, temSenha: !!sala.senhaGuardada };
+  return {
+    existe: true,
+    codigo: sala.codigo,
+    temSenha: !!sala.senhaGuardada,
+    cheia: sala.participantes.size >= config.maxPessoasPorSala,
+  };
+}
+
+function estatisticas() {
+  let pessoas = 0;
+  for (const s of salas.values()) pessoas += s.participantes.size;
+  return { salas: salas.size, pessoas };
 }
 
 // =====================================================
@@ -195,30 +191,15 @@ function tratarConexao(ws, ip) {
   /** @type {Participante | null} */
   let participante = null;
 
-  // ---------- Helpers da conexão ----------
   const sala = () => participante.sala;
-
-  function obterTransporte(transporteId, direcao) {
-    const t = participante.transportes.get(transporteId);
-    if (!t || t.appData.direcao !== direcao) throw new Error('Transporte inválido');
-    return t;
-  }
-
-  function avisarProdutorFechado(produtor) {
-    participante.produtores.delete(produtor.id);
-    sala().enviarParaTodos('produtorFechado', {
-      produtorId: produtor.id,
-      participanteId: participante.id,
-    });
-  }
 
   // ---------- Métodos que o navegador pode chamar ----------
   const metodos = {
-    // Entrar numa sala com o código
+    // Entrar numa sala com o código (e a senha, se tiver)
     async entrar({ codigo, nome, senha }) {
       if (participante) throw new Error('Você já está numa sala');
 
-      // ---------- Anti-chute: muitos erros seguidos bloqueiam o IP por um tempo ----------
+      // Anti-chute: muitos erros seguidos bloqueiam o IP por um tempo
       if (!limites.tentativasErradas.pode(ip)) {
         throw new Error('Muitas tentativas erradas. Espere alguns minutos.');
       }
@@ -229,144 +210,64 @@ function tratarConexao(ws, ip) {
         throw new Error('Sala não encontrada. Confira o código.');
       }
 
-      // ---------- Senha (só se a sala tiver) ----------
       if (s.senhaGuardada) {
         if (!senha) throw new Error('Esta sala tem senha.');
+        // Limite também por sala: protege a senha mesmo se alguém trocar de IP
+        if (!limites.senhaPorSala.pode(s.codigo)) {
+          throw new Error('Muitas senhas erradas nesta sala. Espere alguns minutos.');
+        }
         if (!(await conferir(String(senha).slice(0, config.tamanhoMaxSenha), s.senhaGuardada))) {
           limites.tentativasErradas.registrar(ip);
+          limites.senhaPorSala.registrar(s.codigo);
           throw new Error('Senha incorreta.');
         }
       }
 
-      if (s.participantes.size >= config.maxPessoasPorSala) throw new Error('A sala está cheia.');
+      if (s.participantes.size >= config.maxPessoasPorSala) {
+        throw new Error(`A sala está cheia (máximo ${config.maxPessoasPorSala} pessoas).`);
+      }
 
       participante = new Participante(ws, s, limparTexto(nome, 30) || 'Anônimo');
       s.participantes.set(participante.id, participante);
       s.cancelarFechamento();
       s.enviarParaTodos('participanteEntrou', participante.resumo(), participante.id);
-
-      return {
-        codigo: s.codigo,
-        temSenha: !!s.senhaGuardada,
-        meuId: participante.id,
-        rtpCapabilities: s.router.rtpCapabilities,
-        participantes: [...s.participantes.values()].map((p) => p.resumo()),
-        produtores: s.todosProdutores().map((p) => resumoProdutor(p, s.participantes.get(p.appData.participanteId))),
-        chat: s.chat,
-      };
+      return estadoParaCliente(s, participante);
     },
 
-    // Criar o "cano" de envio ou de recebimento
-    async criarTransporte({ direcao }) {
-      if (direcao !== 'envio' && direcao !== 'recebimento') throw new Error('Direção inválida');
-      const jaTem = [...participante.transportes.values()].some((t) => t.appData.direcao === direcao);
-      if (jaTem) throw new Error(`Já existe um transporte de ${direcao}`);
+    // Voltar pra sala depois que a conexão com o servidor caiu
+    async reconectar({ codigo, id, token }) {
+      if (participante) throw new Error('Você já está numa sala');
+      const s = salas.get(normalizarCodigo(codigo));
+      const p = s?.participantes.get(String(id));
+      if (!p || !mesmoToken(token, p.token)) throw new Error('Não foi possível voltar pra sala.');
 
-      const t = await criarTransporte(sala().router);
-      t.appData.direcao = direcao;
-      participante.transportes.set(t.id, t);
-      t.observer.on('close', () => participante?.transportes.delete(t.id));
-
-      return {
-        id: t.id,
-        iceParameters: t.iceParameters,
-        iceCandidates: t.iceCandidates,
-        dtlsParameters: t.dtlsParameters,
-      };
+      clearTimeout(p.timerSaida);
+      p.timerSaida = null;
+      if (p.ws && p.ws !== ws) p.ws.close(4001, 'Conectado em outro lugar');
+      p.ws = ws;
+      participante = p;
+      return estadoParaCliente(s, p);
     },
 
-    async conectarTransporte({ transporteId, dtlsParameters }) {
-      const t = participante.transportes.get(transporteId);
-      if (!t) throw new Error('Transporte inválido');
-      await t.connect({ dtlsParameters });
+    // Repassa a mensagem de conexão P2P pra outra pessoa da sala
+    async sinal({ para, dados }) {
+      const destino = sala().participantes.get(String(para));
+      if (!destino || destino === participante) throw new Error('Participante não encontrado');
+      enviar(destino.ws, 'sinal', { de: participante.id, dados });
     },
 
-    // Começar a transmitir (vídeo da tela ou áudio da tela)
-    async produzir({ transporteId, kind, rtpParameters }) {
-      if (kind !== 'video' && kind !== 'audio') throw new Error('Tipo de mídia inválido');
-      const jaTemDoTipo = [...participante.produtores.values()].some((p) => p.kind === kind);
-      if (jaTemDoTipo) throw new Error('Você já está transmitindo');
-
-      // ---------- Limite de telas ao mesmo tempo na sala ----------
-      if (kind === 'video') {
-        const telas = sala().todosProdutores().filter((p) => p.kind === 'video').length;
-        if (telas >= config.maxTransmissoesPorSala) {
-          throw new Error(`A sala já tem ${telas} telas sendo transmitidas (máximo ${config.maxTransmissoesPorSala}).`);
-        }
-      }
-
-      const t = obterTransporte(transporteId, 'envio');
-      const tipo = kind === 'video' ? 'tela' : 'audio';
-      const produtor = await t.produce({
-        kind,
-        rtpParameters,
-        appData: { participanteId: participante.id, tipo, espectadores: -1 },
-      });
-      participante.produtores.set(produtor.id, produtor);
-
-      // Se o transporte cair (pessoa saiu), avisa a sala
-      const dono = participante;
-      produtor.on('transportclose', () => {
-        dono.produtores.delete(produtor.id);
-        dono.sala.enviarParaTodos('produtorFechado', { produtorId: produtor.id, participanteId: dono.id });
-      });
-
-      sala().enviarParaTodos('novoProdutor', resumoProdutor(produtor, participante), participante.id);
-      // Roda depois da resposta, pra o navegador já conhecer o produtor
-      setImmediate(() => sala().atualizarEspectadores(produtor));
-      return { id: produtor.id };
-    },
-
-    async fecharProdutor({ produtorId }) {
-      const produtor = participante.produtores.get(produtorId);
-      if (!produtor) return;
-      produtor.close();
-      avisarProdutorFechado(produtor);
-    },
-
-    // Começar a receber a tela/áudio de alguém (começa pausado)
-    async consumir({ produtorId, transporteId, rtpCapabilities }) {
+    // Avisa a sala que começou/parou de transmitir (respeitando o limite)
+    async transmissao({ ativo }) {
       const s = sala();
-      const produtor = s.acharProdutor(produtorId);
-      if (!produtor) throw new Error('Essa transmissão já terminou');
-      if (produtor.appData.participanteId === participante.id) throw new Error('Não dá pra assistir a si mesmo');
-      if (!s.router.canConsume({ producerId: produtorId, rtpCapabilities })) {
-        throw new Error('Seu navegador não suporta o codec dessa transmissão');
+      const quer = !!ativo;
+      if (quer && !participante.transmitindo && s.quantosTransmitindo() >= config.maxTransmissoesPorSala) {
+        throw new Error(
+          `A sala já tem ${s.quantosTransmitindo()} telas sendo transmitidas (máximo ${config.maxTransmissoesPorSala}).`
+        );
       }
-
-      const t = obterTransporte(transporteId, 'recebimento');
-      const consumidor = await t.consume({ producerId: produtorId, rtpCapabilities, paused: true });
-      participante.consumidores.set(consumidor.id, consumidor);
-
-      const dono = participante;
-      const aoFechar = () => {
-        dono.consumidores.delete(consumidor.id);
-        s.atualizarEspectadores(produtor);
-      };
-      consumidor.on('transportclose', aoFechar);
-      consumidor.on('producerclose', aoFechar);
-
-      return {
-        id: consumidor.id,
-        produtorId,
-        kind: consumidor.kind,
-        rtpParameters: consumidor.rtpParameters,
-      };
-    },
-
-    // Retomar/pausar = mostrar/ocultar a tela de alguém (pausado não gasta banda)
-    async retomarConsumidor({ consumidorId }) {
-      const c = participante.consumidores.get(consumidorId);
-      if (!c) throw new Error('Consumidor inválido');
-      await c.resume();
-      sala().atualizarEspectadores(sala().acharProdutor(c.producerId));
-    },
-
-    async pausarConsumidor({ consumidorId }) {
-      const c = participante.consumidores.get(consumidorId);
-      if (!c) throw new Error('Consumidor inválido');
-      await c.pause();
-      sala().atualizarEspectadores(sala().acharProdutor(c.producerId));
+      if (participante.transmitindo === quer) return;
+      participante.transmitindo = quer;
+      s.enviarParaTodos('transmissao', { participanteId: participante.id, ativo: quer });
     },
 
     // Chat da sala
@@ -385,6 +286,18 @@ function tratarConexao(ws, ip) {
       s.chat.push(mensagem);
       if (s.chat.length > 50) s.chat.shift();
       s.enviarParaTodos('chat', mensagem);
+    },
+
+    // Só pra manter a conexão ativa (o Render desliga serviços sem tráfego)
+    async ping() {
+      return { pong: Date.now() };
+    },
+
+    // Sair de propósito (botão "Sair")
+    async sair() {
+      const p = participante;
+      participante = null;
+      p.sala.remover(p);
     },
   };
 
@@ -405,24 +318,22 @@ function tratarConexao(ws, ip) {
     try {
       const funcao = Object.hasOwn(metodos, metodo) ? metodos[metodo] : null;
       if (!funcao) throw new Error('Método desconhecido');
-      if (metodo !== 'entrar' && !participante) throw new Error('Entre numa sala primeiro');
+      const livres = ['entrar', 'reconectar', 'ping'];
+      if (!livres.includes(metodo) && !participante) throw new Error('Entre numa sala primeiro');
       responder(true, (await funcao(dados ?? {})) ?? null);
     } catch (erro) {
       responder(false, erro.message || 'Erro');
     }
   });
 
-  // ---------- Saída (fechou a aba, caiu a internet...) ----------
+  // ---------- Conexão caiu: espera um pouco antes de tirar da sala ----------
+  // (o vídeo P2P continua funcionando enquanto o navegador reconecta)
   ws.on('close', () => {
-    if (!participante) return;
     const p = participante;
-    const s = p.sala;
-    // Fechar os transportes fecha os produtores e consumidores juntos
-    for (const t of [...p.transportes.values()]) t.close();
-    s.participantes.delete(p.id);
-    s.enviarParaTodos('participanteSaiu', { id: p.id });
-    if (s.participantes.size === 0 && salas.has(s.codigo)) s.agendarFechamento();
+    if (!p || p.ws !== ws) return;
+    p.ws = null;
+    p.timerSaida = setTimeout(() => p.sala.remover(p), config.segundosParaReconectar * 1000);
   });
 }
 
-module.exports = { criarSala, infoSala, tratarConexao };
+module.exports = { criarSala, infoSala, estatisticas, tratarConexao };

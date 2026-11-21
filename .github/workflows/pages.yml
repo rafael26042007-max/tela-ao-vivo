@@ -1,0 +1,45 @@
+# =====================================================
+# Publica a pasta web/ no GitHub Pages a cada push na main
+# Endereço: https://rafael26042007-max.github.io/tela-ao-vivo/
+# =====================================================
+name: Publicar site (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch: # botão "Run workflow" na aba Actions
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Só uma publicação por vez (a mais nova ganha)
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.publicacao.outputs.page_url }}
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v5
+
+      - name: Configurar o Pages
+        uses: actions/configure-pages@v5
+
+      - name: Empacotar a pasta web/
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: web
+
+      - name: Publicar
+        id: publicacao
+        uses: actions/deploy-pages@v5

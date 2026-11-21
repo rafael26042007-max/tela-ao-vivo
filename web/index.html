@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Compartilhe a tela ao vivo com até 4 pessoas, direto do navegador. Grátis, sem instalar nada.">
   <title>Tela ao Vivo</title>
-  <link rel="stylesheet" href="/style.css">
+  <!-- Caminhos relativos (./) pra funcionar no GitHub Pages (/tela-ao-vivo/) e no seu PC -->
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
 
@@ -16,7 +18,10 @@
       <span class="ponto-ao-vivo"></span>
       <h1>Tela ao Vivo</h1>
     </div>
-    <p class="subtitulo">Compartilhe a tela com várias pessoas, direto do navegador.</p>
+    <p class="subtitulo">Compartilhe a tela com até 4 pessoas, direto do navegador. O vídeo vai direto de um PC pro outro.</p>
+
+    <!-- Estado do servidor (no plano grátis ele "dorme" e leva até 1 min pra acordar) -->
+    <p id="status-servidor" class="status-servidor">Conectando ao servidor...</p>
 
     <label class="campo">
       <span>Seu nome</span>
@@ -28,7 +33,7 @@
         <h2>Criar uma sala</h2>
         <p>Você recebe um código pra passar pros outros.</p>
         <input id="campo-senha-criar" type="password" maxlength="64" placeholder="Senha (opcional)" autocomplete="new-password">
-        <button id="botao-criar" class="botao principal">Criar sala</button>
+        <button id="botao-criar" class="botao principal" disabled>Criar sala</button>
       </section>
 
       <section class="cartao">
@@ -36,7 +41,7 @@
         <form id="form-entrar" class="coluna">
           <div class="linha">
             <input id="campo-codigo" type="text" maxlength="7" placeholder="CÓDIGO" autocomplete="off" spellcheck="false">
-            <button class="botao" type="submit">Entrar</button>
+            <button class="botao" type="submit" disabled>Entrar</button>
           </div>
           <!-- Só aparece se a sala tiver senha -->
           <input id="campo-senha-entrar" type="password" maxlength="64" placeholder="Senha da sala" autocomplete="current-password" hidden>
@@ -45,6 +50,9 @@
     </div>
 
     <p id="erro-inicio" class="erro" role="alert"></p>
+
+    <!-- Aparece se o JavaScript não carregar (ex: abriu o arquivo direto, sem servidor) -->
+    <noscript><p class="erro">Ative o JavaScript para usar o Tela ao Vivo.</p></noscript>
   </main>
 
   <!-- =================================================
@@ -118,11 +126,9 @@
         </div>
       </aside>
     </div>
-
-    <!-- Áudios das transmissões ficam aqui (invisíveis) -->
-    <div id="audios" hidden></div>
   </div>
 
-  <script src="/dist/app.js"></script>
+  <script src="./config.js"></script>
+  <script type="module" src="./src/app.js"></script>
 </body>
 </html>

@@ -178,10 +178,17 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .tile-pausado {
   position: absolute; inset: 0 0 37px 0;
   display: flex; align-items: center; justify-content: center;
+  padding: 20px; text-align: center;
   background: rgba(15, 17, 21, .92);
   color: var(--texto-fraco);
-  cursor: pointer;
 }
+.tile-pausado.clicavel { cursor: pointer; }
+
+/* Estado do servidor na tela inicial */
+.status-servidor { margin: -8px 0 0; font-size: 13px; color: #fcd34d; display: flex; align-items: center; gap: 10px; }
+.status-servidor::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.status-servidor.ok { color: #4ade80; }
+.status-servidor.erro { color: #f87171; }
 .tile:fullscreen video { object-fit: contain; }
 
 /* ---------- Lateral (pessoas + chat) ---------- */

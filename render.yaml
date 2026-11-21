@@ -1,0 +1,25 @@
+# =====================================================
+# Render: servidor de sinalização (plano grátis)
+# No painel do Render: New -> Blueprint -> escolha este repositório
+# =====================================================
+services:
+  - type: web
+    name: tela-ao-vivo
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm install --omit=dev
+    startCommand: node server/index.js
+    healthCheckPath: /saude
+    autoDeploy: true
+    envVars:
+      # Site do GitHub Pages que pode usar este servidor
+      - key: ORIGENS_PERMITIDAS
+        value: https://rafael26042007-max.github.io
+      # O Render fica na frente: o IP do visitante vem no X-Forwarded-For
+      - key: CONFIAR_PROXY
+        value: "true"
+      - key: MAX_PESSOAS
+        value: "4"
+      - key: MAX_TRANSMISSOES
+        value: "4"

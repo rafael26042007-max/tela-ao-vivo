@@ -1,6 +1,7 @@
 // =====================================================
-// Tela ao Vivo - servidor principal
-// Junta: site (arquivos de web/), API de salas e WebSocket de sinalização
+// Tela ao Vivo - servidor de sinalização
+// Junta: API de salas, WebSocket de sinalização e (no seu PC) o site
+// No Render ele roda sozinho; o site fica no GitHub Pages.
 // =====================================================
 const fs = require('fs');
 const path = require('path');
@@ -10,8 +11,7 @@ const { WebSocketServer } = require('ws');
 
 const config = require('./config');
 const { obterCertificado } = require('./certificado');
-const { iniciarMidia } = require('./midia');
-const { criarSala, infoSala, tratarConexao } = require('./salas');
+const { criarSala, infoSala, estatisticas, tratarConexao } = require('./salas');
 const limites = require('./limites');
 
 const PASTA_WEB = path.join(__dirname, '..', 'web');
@@ -20,15 +20,11 @@ const TIPOS = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
-  '.map': 'application/json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
 };
 
-// -----------------------------------------------------
-// Respostas HTTP
-// -----------------------------------------------------
 // Cabeçalhos de segurança básicos em todas as respostas
 const CABECALHOS_SEGURANCA = {
   'X-Content-Type-Options': 'nosniff',
@@ -36,24 +32,53 @@ const CABECALHOS_SEGURANCA = {
   'X-Frame-Options': 'DENY',
 };
 
-function responderJson(res, status, dados) {
+// =====================================================
+// Utilitários de requisição
+// =====================================================
+
+// IP de quem fez a requisição.
+// No Render, o IP do visitante vem no começo do X-Forwarded-For.
+function ipDe(req) {
+  if (config.confiarProxy) {
+    const primeiro = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+    if (primeiro) return primeiro;
+  }
+  return req.socket.remoteAddress;
+}
+
+// Origem permitida? (o próprio servidor ou um site da lista, ex: GitHub Pages)
+function origemPermitida(req) {
+  const origem = req.headers.origin;
+  if (!origem) return true; // curl, monitoramento etc.
+  try {
+    if (new URL(origem).host === req.headers.host) return true;
+  } catch {
+    return false;
+  }
+  return config.origensPermitidas.includes(origem.replace(/\/+$/, ''));
+}
+
+// CORS: deixa o site do GitHub Pages chamar a API deste servidor
+function cabecalhosCors(req) {
+  const origem = req.headers.origin;
+  if (!origem || !origemPermitida(req)) return {};
+  return {
+    'Access-Control-Allow-Origin': origem,
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '600',
+    Vary: 'Origin',
+  };
+}
+
+function responderJson(req, res, status, dados) {
   res.writeHead(status, {
     ...CABECALHOS_SEGURANCA,
+    ...cabecalhosCors(req),
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(dados));
-}
-
-// IP de quem fez a requisição.
-// Atrás de um proxy, pega o último IP do X-Forwarded-For (o que o NOSSO proxy anotou;
-// os anteriores podem ter sido inventados pelo visitante).
-function ipDe(req) {
-  if (config.confiarProxy) {
-    const lista = String(req.headers['x-forwarded-for'] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-    if (lista.length) return lista[lista.length - 1];
-  }
-  return req.socket.remoteAddress;
 }
 
 // Lê o corpo JSON da requisição (no máximo 1 KB)
@@ -82,6 +107,9 @@ function lerJson(req) {
   });
 }
 
+// =====================================================
+// Site (usado quando você roda no seu PC)
+// =====================================================
 function servirArquivo(res, urlPath) {
   const relativo = urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath).replace(/^\/+/, '');
   const arquivo = path.resolve(PASTA_WEB, relativo);
@@ -100,78 +128,97 @@ function servirArquivo(res, urlPath) {
     res.writeHead(200, {
       ...CABECALHOS_SEGURANCA,
       'Content-Type': TIPOS[path.extname(arquivo)] || 'application/octet-stream',
+      'Cache-Control': 'no-cache',
     });
     res.end(conteudo);
   });
 }
 
-// -----------------------------------------------------
+// =====================================================
 // Rotas
+//   GET  /saude              -> o servidor está acordado?
 //   POST /api/salas          -> cria sala (senha opcional), devolve { codigo }
-//   GET  /api/salas/:codigo  -> diz se a sala existe
+//   GET  /api/salas/:codigo  -> a sala existe? tem senha?
 //   GET  /qualquer-coisa     -> arquivos do site
-// -----------------------------------------------------
+// =====================================================
 async function tratarRequisicao(req, res) {
   const url = new URL(req.url, 'http://localhost');
 
   try {
+    // ---------- Pré-requisição do CORS ----------
+    if (req.method === 'OPTIONS') {
+      res.writeHead(origemPermitida(req) ? 204 : 403, cabecalhosCors(req)).end();
+      return;
+    }
+
+    // ---------- Saúde (o site usa pra "acordar" o servidor) ----------
+    if (url.pathname === '/saude') {
+      return responderJson(req, res, 200, { ok: true, ...estatisticas() });
+    }
+
+    if (url.pathname.startsWith('/api/') && !origemPermitida(req)) {
+      return responderJson(req, res, 403, { erro: 'Origem não permitida' });
+    }
+
+    // ---------- Criar sala ----------
     if (url.pathname === '/api/salas' && req.method === 'POST') {
       const ip = ipDe(req);
       if (!limites.criacaoDeSalas.pode(ip)) {
-        return responderJson(res, 429, { erro: 'Muitas salas criadas. Espere um minuto.' });
+        return responderJson(req, res, 429, { erro: 'Muitas salas criadas. Espere um minuto.' });
       }
       let corpo;
       try {
         corpo = await lerJson(req);
       } catch (erro) {
-        return responderJson(res, 400, { erro: erro.message });
+        return responderJson(req, res, 400, { erro: erro.message });
       }
       limites.criacaoDeSalas.registrar(ip);
       const codigo = await criarSala({ senha: corpo.senha });
-      return responderJson(res, 201, { codigo });
+      return responderJson(req, res, 201, { codigo });
     }
 
+    // ---------- Consultar sala ----------
     const rotaSala = url.pathname.match(/^\/api\/salas\/([^/]+)$/);
     if (rotaSala && req.method === 'GET') {
       // Mesmo limitador do "entrar": impede ficar chutando códigos por aqui
       const ip = ipDe(req);
       if (!limites.tentativasErradas.pode(ip)) {
-        return responderJson(res, 429, { erro: 'Muitas tentativas erradas. Espere alguns minutos.' });
+        return responderJson(req, res, 429, { erro: 'Muitas tentativas erradas. Espere alguns minutos.' });
       }
       const info = infoSala(rotaSala[1]);
       if (!info.existe) limites.tentativasErradas.registrar(ip);
-      return responderJson(res, 200, info);
+      return responderJson(req, res, 200, info);
     }
 
     if (url.pathname.startsWith('/api/')) {
-      return responderJson(res, 404, { erro: 'Rota não encontrada' });
+      return responderJson(req, res, 404, { erro: 'Rota não encontrada' });
     }
 
+    // ---------- Site ----------
     if (req.method === 'GET') return servirArquivo(res, url.pathname);
     res.writeHead(405).end();
   } catch (erro) {
     console.error(erro);
-    responderJson(res, 503, { erro: erro.message });
+    responderJson(req, res, 500, { erro: erro.message });
   }
 }
 
-// -----------------------------------------------------
+// =====================================================
 // Inicialização
-// -----------------------------------------------------
+// =====================================================
 async function iniciar() {
-  if (!fs.existsSync(path.join(PASTA_WEB, 'dist', 'app.js'))) {
-    console.error('O site ainda não foi compilado. Rode: npm run build');
-    process.exit(1);
-  }
-
-  await iniciarMidia();
-
   const servidor = config.usarHttps
     ? https.createServer(await obterCertificado(config), tratarRequisicao)
     : http.createServer(tratarRequisicao);
 
-  // ---------- WebSocket em /ws ----------
-  const wss = new WebSocketServer({ server: servidor, path: '/ws', maxPayload: 64 * 1024 });
+  // ---------- WebSocket em /ws (só de origens permitidas) ----------
+  const wss = new WebSocketServer({
+    server: servidor,
+    path: '/ws',
+    maxPayload: 64 * 1024,
+    verifyClient: ({ req }) => origemPermitida(req),
+  });
+
   wss.on('connection', (ws, req) => {
     ws.vivo = true;
     ws.on('pong', () => (ws.vivo = true));
@@ -206,17 +253,13 @@ async function iniciar() {
     console.log('');
     console.log('  Tela ao Vivo rodando!');
     console.log(`  Neste PC:      ${protocolo}://localhost:${config.porta}`);
-    if (config.confiarProxy) {
-      console.log('  Modo proxy:    acesse pelo domínio configurado no Caddy');
-    } else {
-      console.log(`  Na sua rede:   ${protocolo}://${config.ipAnunciado}:${config.porta}`);
-    }
-    console.log(`  Vídeo (WebRTC): porta ${config.portaRtc} UDP/TCP`);
+    if (config.usarHttps) console.log(`  Na sua rede:   ${protocolo}://${config.ipLocal}:${config.porta}`);
+    if (config.origensPermitidas.length) console.log(`  Sites liberados: ${config.origensPermitidas.join(', ')}`);
     console.log('');
   });
 }
 
-// Ctrl+C ou "systemctl stop": encerra na hora
+// Ctrl+C ou parada do Render: encerra na hora
 for (const sinal of ['SIGINT', 'SIGTERM']) {
   process.on(sinal, () => {
     console.log('\n  Encerrando o servidor...');
@@ -225,11 +268,6 @@ for (const sinal of ['SIGINT', 'SIGTERM']) {
 }
 
 iniciar().catch((erro) => {
-  // A porta do vídeo (40000) ocupada cai aqui
-  if (/EADDRINUSE|address already in use/i.test(erro.message)) {
-    console.error(`\n  A porta ${config.portaRtc} (vídeo) já está em uso. Outro servidor está rodando?\n`);
-    process.exit(1);
-  }
   console.error('Falha ao iniciar:', erro);
   process.exit(1);
 });
