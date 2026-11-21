@@ -113,7 +113,7 @@ Modo desenvolvimento (reinicia o servidor ao salvar): `npm run dev`
 ### Servidor → Render
 1. Em [render.com](https://render.com): **New → Blueprint** → escolha este repositório
 2. O Render lê o `render.yaml` e cria o serviço `tela-ao-vivo` no plano grátis
-3. Se o endereço do serviço não for `https://tela-ao-vivo.onrender.com`, atualize em `web/config.js`
+3. Se o endereço do serviço não for `https://tela-ao-vivo-27wj.onrender.com`, atualize em `web/config.js`
 
 ### Limites do plano grátis do Render
 - Ele **dorme depois de 15 min sem uso** e leva **até ~1 min pra acordar**. O site mostra "Acordando o servidor..." enquanto isso.
