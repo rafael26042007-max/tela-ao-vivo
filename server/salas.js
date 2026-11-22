@@ -199,16 +199,8 @@ function tratarConexao(ws, ip) {
     async entrar({ codigo, nome, senha }) {
       if (participante) throw new Error('Você já está numa sala');
 
-      // Anti-chute: muitos erros seguidos bloqueiam o IP por um tempo
-      if (!limites.tentativasErradas.pode(ip)) {
-        throw new Error('Muitas tentativas erradas. Espere alguns minutos.');
-      }
-
       const s = salas.get(normalizarCodigo(codigo));
-      if (!s) {
-        limites.tentativasErradas.registrar(ip);
-        throw new Error('Sala não encontrada. Confira o código.');
-      }
+      if (!s) throw new Error('Sala não encontrada. Confira o código.');
 
       if (s.senhaGuardada) {
         if (!senha) throw new Error('Esta sala tem senha.');
@@ -217,7 +209,6 @@ function tratarConexao(ws, ip) {
           throw new Error('Muitas senhas erradas nesta sala. Espere alguns minutos.');
         }
         if (!(await conferir(String(senha).slice(0, config.tamanhoMaxSenha), s.senhaGuardada))) {
-          limites.tentativasErradas.registrar(ip);
           limites.senhaPorSala.registrar(s.codigo);
           throw new Error('Senha incorreta.');
         }

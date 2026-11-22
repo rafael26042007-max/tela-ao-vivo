@@ -180,14 +180,7 @@ async function tratarRequisicao(req, res) {
     // ---------- Consultar sala ----------
     const rotaSala = url.pathname.match(/^\/api\/salas\/([^/]+)$/);
     if (rotaSala && req.method === 'GET') {
-      // Mesmo limitador do "entrar": impede ficar chutando códigos por aqui
-      const ip = ipDe(req);
-      if (!limites.tentativasErradas.pode(ip)) {
-        return responderJson(req, res, 429, { erro: 'Muitas tentativas erradas. Espere alguns minutos.' });
-      }
-      const info = infoSala(rotaSala[1]);
-      if (!info.existe) limites.tentativasErradas.registrar(ip);
-      return responderJson(req, res, 200, info);
+      return responderJson(req, res, 200, infoSala(rotaSala[1]));
     }
 
     if (url.pathname.startsWith('/api/')) {

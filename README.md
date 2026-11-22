@@ -57,7 +57,7 @@ cada cópia fica mais leve, e o upload total fica parecido com o de 3 espectador
 | Proteção | Como |
 |---|---|
 | Senha da sala | Guardada só como hash (scrypt + sal), comparação em tempo constante |
-| Chutar códigos/senhas | 10 erros em 10 min bloqueiam o IP; e 20 senhas erradas em 10 min travam a sala |
+| Chutar a senha de uma sala | 20 senhas erradas em 10 min travam a sala por um tempo (errar o código não bloqueia ninguém) |
 | Criar salas em massa | 10 por minuto por IP e limite total de salas |
 | Outros sites usando seu servidor | Só as origens em `ORIGENS_PERMITIDAS` podem usar a API e o WebSocket |
 | Lotar a sala | Máximo de pessoas e de transmissões por sala |

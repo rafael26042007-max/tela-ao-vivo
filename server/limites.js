@@ -39,8 +39,6 @@ class Limitador {
 module.exports = {
   // Criar sala: 10 por minuto por IP
   criacaoDeSalas: new Limitador({ maximo: 10, janelaMs: 60_000 }),
-  // Código ou senha errados: 10 erros a cada 10 minutos por IP
-  tentativasErradas: new Limitador({ maximo: 10, janelaMs: 10 * 60_000 }),
   // Senha errada numa sala (contando todo mundo): 20 a cada 10 minutos por sala
   senhaPorSala: new Limitador({ maximo: 20, janelaMs: 10 * 60_000 }),
 };
