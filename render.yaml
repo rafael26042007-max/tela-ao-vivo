@@ -20,6 +20,6 @@ services:
       - key: CONFIAR_PROXY
         value: "true"
       - key: MAX_PESSOAS
-        value: "4"
+        value: "8"
       - key: MAX_TRANSMISSOES
         value: "4"

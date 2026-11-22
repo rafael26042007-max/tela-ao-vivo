@@ -1,6 +1,6 @@
 # 🔴 Tela ao Vivo
 
-Site para transmitir a tela ao vivo, com **salas e código de entrada**, pra até **4 pessoas** por sala.
+Site para transmitir a tela ao vivo, com **salas e código de entrada**, pra até **8 pessoas** por sala.
 O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe o vídeo.
 
 🌐 **Site:** https://rafael26042007-max.github.io/tela-ao-vivo/
@@ -41,7 +41,9 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 | Sinalização | Render (grátis) | Quase nada: só mensagens de texto |
 | Vídeo | Direto entre os PCs | A internet e a CPU de quem transmite |
 
-**Importante:** em P2P, quem transmite manda **uma cópia pra cada pessoa**. Por isso o limite de 4 por sala.
+**Importante:** em P2P, quem transmite manda **uma cópia pra cada pessoa** (com 8 na sala, são 7 cópias).
+Por isso o **bitrate se ajusta sozinho**: até 3 espectadores cada um recebe a qualidade escolhida; com mais gente,
+cada cópia fica mais leve, e o upload total fica parecido com o de 3 espectadores (mínimo de 300 kbps por pessoa).
 
 ### Economia de processamento
 

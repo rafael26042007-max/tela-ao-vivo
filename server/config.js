@@ -53,8 +53,8 @@ module.exports = {
 
   // ---------- Limites ----------
   maxSalas: Number(process.env.MAX_SALAS || 100),
-  // Em P2P cada transmissor envia uma cópia pra cada pessoa: 4 é um bom limite
-  maxPessoasPorSala: Number(process.env.MAX_PESSOAS || 4),
+  // Em P2P cada transmissor envia uma cópia pra cada pessoa (o bitrate se ajusta sozinho)
+  maxPessoasPorSala: Number(process.env.MAX_PESSOAS || 8),
   maxTransmissoesPorSala: Number(process.env.MAX_TRANSMISSOES || 4),
   minutosSalaVazia: Number(process.env.MINUTOS_SALA_VAZIA || 30),
   // Tempo pra voltar se a conexão com o servidor cair (o vídeo P2P continua)

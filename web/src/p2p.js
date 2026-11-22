@@ -16,6 +16,19 @@ export const QUALIDADES = {
   fluido: { largura: 1920, altura: 1080, fps: 30, bitrate: 2_500_000 },
 };
 
+// -----------------------------------------------------
+// Bitrate por pessoa (ajuste automático pra salas cheias)
+// Até 3 espectadores: cada um recebe a qualidade escolhida.
+// Com mais gente: divide, pra o upload total ficar parecido com o de 3.
+// Ex (Equilibrado, 1,2 Mbps): 7 espectadores -> ~514 kbps cada (~3,6 Mbps no total)
+// -----------------------------------------------------
+const MINIMO_POR_PESSOA = 300_000;
+
+export function bitratePorPessoa(bitrateBase, espectadores) {
+  if (espectadores <= 3) return bitrateBase;
+  return Math.max(MINIMO_POR_PESSOA, Math.round((bitrateBase * 3) / espectadores));
+}
+
 // Codecs de vídeo que este navegador consegue enviar (VP8 / H264)
 export function codecsDisponiveis() {
   const codecs = window.RTCRtpSender?.getCapabilities?.('video')?.codecs ?? [];
@@ -212,7 +225,7 @@ export class MalhaP2P {
 
       const opcoes = { direction: 'sendonly', streams: [stream] };
       // Uma camada só, com limite de bitrate e fps -> menos CPU e internet
-      if (track.kind === 'video') opcoes.sendEncodings = [{ maxBitrate: q.bitrate, maxFramerate: q.fps }];
+      if (track.kind === 'video') opcoes.sendEncodings = [{ maxBitrate: this.bitrateAtual(q), maxFramerate: q.fps }];
       const transceptor = par.pc.addTransceiver(track, opcoes);
       if (track.kind === 'video') preferirCodec(transceptor, codec);
       par.transceptores[track.kind] = transceptor;
@@ -220,11 +233,20 @@ export class MalhaP2P {
     this.aplicarOculto(par);
   }
 
+  // Quantas pessoas estão recebendo a minha tela (quem ocultou não conta)
+  quantosVendo() {
+    return [...this.pares.values()].filter((p) => !p.ocultoPeloOutro).length;
+  }
+
+  bitrateAtual(q) {
+    return bitratePorPessoa(q.bitrate, this.quantosVendo());
+  }
+
   async limitarVideo(sender, q) {
     try {
       const parametros = sender.getParameters();
       if (!parametros.encodings?.length) return;
-      parametros.encodings[0].maxBitrate = q.bitrate;
+      parametros.encodings[0].maxBitrate = this.bitrateAtual(q);
       parametros.encodings[0].maxFramerate = q.fps;
       await sender.setParameters(parametros);
     } catch {
@@ -251,6 +273,7 @@ export class MalhaP2P {
     }
     this.transmissao.stream.getTracks().forEach((t) => t.stop());
     this.transmissao = null;
+    this.ultimoVendo = undefined; // a próxima transmissão recalcula o bitrate
   }
 
   get transmitindo() {
@@ -258,9 +281,17 @@ export class MalhaP2P {
   }
 
   // Quantas pessoas estão vendo a MINHA tela
+  // Também reajusta o bitrate de todas as cópias quando o número muda
   atualizarEspectadores() {
     if (!this.transmissao) return;
-    const vendo = [...this.pares.values()].filter((p) => !p.ocultoPeloOutro).length;
+    const vendo = this.quantosVendo();
+    if (vendo !== this.ultimoVendo) {
+      this.ultimoVendo = vendo;
+      const q = QUALIDADES[this.transmissao.qualidade] ?? QUALIDADES.equilibrado;
+      for (const par of this.pares.values()) {
+        if (par.transceptores.video) this.limitarVideo(par.transceptores.video.sender, q);
+      }
+    }
     this.emitir('espectadores', vendo);
   }
 
