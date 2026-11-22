@@ -54,7 +54,10 @@ module.exports = {
   // ---------- Limites ----------
   maxSalas: Number(process.env.MAX_SALAS || 100),
   // Em P2P cada transmissor envia uma cópia pra cada pessoa (o bitrate se ajusta sozinho)
-  maxPessoasPorSala: Number(process.env.MAX_PESSOAS || 8),
+  maxPessoasPorSala: Number(process.env.MAX_PESSOAS || 8), // padrão ao criar a sala
+  // O dono escolhe o limite da sala entre 2 e este número.
+  // 12: com o bitrate automático, cada cópia ainda fica acima de 300 kbps.
+  limiteMaximoPessoas: Number(process.env.MAX_LIMITE_PESSOAS || 12),
   maxTransmissoesPorSala: Number(process.env.MAX_TRANSMISSOES || 4),
   minutosSalaVazia: Number(process.env.MINUTOS_SALA_VAZIA || 30),
   // Tempo pra voltar se a conexão com o servidor cair (o vídeo P2P continua).

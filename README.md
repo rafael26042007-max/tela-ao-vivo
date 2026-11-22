@@ -1,6 +1,6 @@
 # 🔴 Tela ao Vivo
 
-Site para transmitir a tela ao vivo, com **salas e código de entrada**, pra até **8 pessoas** por sala.
+Site para transmitir a tela ao vivo, com **salas e código de entrada**, pra até **12 pessoas** por sala (quem cria escolhe o limite).
 O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe o vídeo.
 
 🌐 **Site:** https://rafael26042007-max.github.io/tela-ao-vivo/
@@ -11,7 +11,9 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 
 **Salas**
 - **Criar sala**: código de 6 caracteres (ex: `G7JFR7`) e link de convite (`?sala=G7JFR7`) com prévia bonita no Discord/WhatsApp
-- **Senha opcional** (🔑), pedida só quando a sala tem
+- **Senha opcional** (🔑): fica escondida em "🔒 Proteger com senha"; sem senha, qualquer um com o código entra
+- **Limite de pessoas** escolhido por quem cria a sala (de 2 a 12; padrão 8)
+- **Sala cheia?** Quem tenta entrar fica **esperando uma vaga** e entra sozinho quando alguém sair
 - **Dono da sala** (👑, quem criou): pode **trancar** a sala (ninguém novo entra) e **remover** pessoas. Se o dono sair, quem está há mais tempo vira dono
 - **Nomes repetidos** ganham número ("Ana", "Ana 2") e **cada pessoa tem uma cor**
 

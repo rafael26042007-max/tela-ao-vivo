@@ -175,7 +175,7 @@ async function tratarRequisicao(req, res) {
       }
       limites.criacaoDeSalas.registrar(ip);
       // chaveDono: só quem criou recebe; quem entra com ela vira o dono da sala
-      const { codigo, chaveDono } = await criarSala({ senha: corpo.senha });
+      const { codigo, chaveDono } = await criarSala({ senha: corpo.senha, limite: corpo.limite });
       return responderJson(req, res, 201, { codigo, chaveDono });
     }
 

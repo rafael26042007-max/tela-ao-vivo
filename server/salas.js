@@ -57,9 +57,10 @@ function mesmoSegredo(a, b) {
 // Classe Sala
 // =====================================================
 class Sala {
-  constructor(codigo, senhaGuardada = null) {
+  constructor(codigo, senhaGuardada = null, limite = config.maxPessoasPorSala) {
     this.codigo = codigo;
     this.senhaGuardada = senhaGuardada; // { sal, hash } ou null (sala aberta)
+    this.limite = limite; // máximo de pessoas (o dono escolhe ao criar)
     this.chaveDono = crypto.randomBytes(18).toString('base64url'); // só quem criou recebe
     this.donoId = null;
     this.trancada = false; // trancada = ninguém novo entra
@@ -192,6 +193,7 @@ function bilheteDe(p) {
     id: p.id,
     nome: p.nome,
     dono: s.donoId === p.id,
+    limite: s.limite,
     senha: s.senhaGuardada
       ? { sal: s.senhaGuardada.sal.toString('base64'), hash: s.senhaGuardada.hash.toString('base64') }
       : null,
@@ -212,7 +214,7 @@ async function estadoParaCliente(sala, participante, extra = {}) {
     chat: sala.chat,
     iceServers: await obterIceServers(),
     limites: {
-      maxPessoas: config.maxPessoasPorSala,
+      maxPessoas: sala.limite,
       maxTransmissoes: config.maxTransmissoesPorSala,
     },
     ...extra,
@@ -222,7 +224,14 @@ async function estadoParaCliente(sala, participante, extra = {}) {
 // =====================================================
 // Criar sala (chamado pela rota POST /api/salas)
 // =====================================================
-async function criarSala({ senha } = {}) {
+// Limite escolhido pelo dono: número inteiro entre 2 e o máximo permitido
+function limiteValido(valor) {
+  const n = Math.round(Number(valor));
+  if (!Number.isFinite(n)) return config.maxPessoasPorSala;
+  return Math.min(config.limiteMaximoPessoas, Math.max(2, n));
+}
+
+async function criarSala({ senha, limite } = {}) {
   if (salas.size >= config.maxSalas) {
     throw new Error('O servidor atingiu o limite de salas. Tente mais tarde.');
   }
@@ -230,9 +239,9 @@ async function criarSala({ senha } = {}) {
   if (senhaTexto.length > config.tamanhoMaxSenha) throw new Error('Senha muito longa.');
   const senhaGuardada = senhaTexto ? await gerarHash(senhaTexto) : null;
 
-  const sala = new Sala(gerarCodigo(), senhaGuardada);
+  const sala = new Sala(gerarCodigo(), senhaGuardada, limiteValido(limite ?? config.maxPessoasPorSala));
   salas.set(sala.codigo, sala);
-  console.log(`Sala ${sala.codigo} criada${senhaGuardada ? ' (com senha)' : ''}`);
+  console.log(`Sala ${sala.codigo} criada (até ${sala.limite} pessoas${senhaGuardada ? ', com senha' : ''})`);
   // A chave de dono vai só pra quem criou: quem entrar com ela vira dono
   return { codigo: sala.codigo, chaveDono: sala.chaveDono };
 }
@@ -245,7 +254,9 @@ function infoSala(codigoBruto) {
     existe: true,
     codigo: sala.codigo,
     temSenha: !!sala.senhaGuardada,
-    cheia: sala.participantes.size >= config.maxPessoasPorSala,
+    pessoas: sala.participantes.size,
+    limite: sala.limite,
+    cheia: sala.participantes.size >= sala.limite,
     trancada: sala.trancada,
   };
 }
@@ -303,8 +314,8 @@ function tratarConexao(ws) {
         }
       }
 
-      if (s.participantes.size >= config.maxPessoasPorSala) {
-        throw new Error(`A sala está cheia (máximo ${config.maxPessoasPorSala} pessoas).`);
+      if (s.participantes.size >= s.limite) {
+        throw new Error(`A sala está cheia (máximo ${s.limite} pessoas).`);
       }
 
       participante = s.adicionar(ws, limparTexto(nome, 30) || 'Anônimo', { dono: ehCriador && !s.donoId });
@@ -327,7 +338,7 @@ function tratarConexao(ws) {
       if (!s) {
         if (salas.size >= config.maxSalas) throw new Error('O servidor atingiu o limite de salas.');
         const senha = b.senha ? { sal: Buffer.from(b.senha.sal, 'base64'), hash: Buffer.from(b.senha.hash, 'base64') } : null;
-        s = new Sala(b.codigo, senha);
+        s = new Sala(b.codigo, senha, limiteValido(b.limite ?? config.maxPessoasPorSala));
         s.recriada = true;
         s.recriadaEm = Date.now();
         salas.set(s.codigo, s);
@@ -364,7 +375,7 @@ function tratarConexao(ws) {
         if (existente.ws && existente.ws !== ws) existente.ws.close(4001, 'Você entrou na sala em outra aba');
         s.remover(existente);
       }
-      if (s.participantes.size >= config.maxPessoasPorSala) throw new Error('A sala está cheia.');
+      if (s.participantes.size >= s.limite) throw new Error('A sala está cheia.');
 
       const podeSerDono = b.dono && (!s.donoId || s.donoId === b.id);
       const podeTransmitir = manterId && transmitindo && s.quantosTransmitindo() < config.maxTransmissoesPorSala;

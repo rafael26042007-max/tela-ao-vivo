@@ -57,7 +57,23 @@
       <section class="cartao">
         <h2>Criar uma sala</h2>
         <p>Você recebe um código pra passar pros outros e vira o dono da sala.</p>
-        <input id="campo-senha-criar" type="password" maxlength="64" placeholder="Senha (opcional)" autocomplete="new-password">
+        <!-- Limite de pessoas: o dono escolhe (de 2 a 12) -->
+        <label class="linha-opcao">
+          <span>Até quantas pessoas?</span>
+          <select id="select-limite">
+            <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+            <option value="5">5</option><option value="6">6</option><option value="7">7</option>
+            <option value="8" selected>8</option><option value="9">9</option><option value="10">10</option>
+            <option value="11">11</option><option value="12">12</option>
+          </select>
+        </label>
+        <!-- Senha é opcional: fica escondida até marcar a caixinha -->
+        <label class="checkbox">
+          <input id="check-senha" type="checkbox">
+          🔒 Proteger com senha
+        </label>
+        <input id="campo-senha-criar" type="password" maxlength="64" placeholder="Senha da sala" autocomplete="new-password" hidden>
+        <p class="info sem-margem">Sem senha, qualquer um com o código entra.</p>
         <button id="botao-criar" class="botao principal" disabled>Criar sala</button>
       </section>
 
@@ -72,6 +88,13 @@
           <input id="campo-senha-entrar" type="password" maxlength="64" placeholder="Senha da sala" autocomplete="current-password" hidden>
         </form>
       </section>
+    </div>
+
+    <!-- Sala cheia: espera uma vaga e entra sozinho -->
+    <div id="espera-vaga" class="espera-vaga" hidden>
+      <span class="girando"></span>
+      <span id="texto-espera"></span>
+      <button id="botao-cancelar-espera" class="botao pequeno" type="button">Cancelar</button>
     </div>
 
     <p id="erro-inicio" class="erro" role="alert"></p>

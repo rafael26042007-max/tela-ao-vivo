@@ -27,6 +27,11 @@ const el = {
   campoNome: $('campo-nome'),
   campoCodigo: $('campo-codigo'),
   campoSenhaCriar: $('campo-senha-criar'),
+  checkSenha: $('check-senha'),
+  selectLimite: $('select-limite'),
+  esperaVaga: $('espera-vaga'),
+  textoEspera: $('texto-espera'),
+  botaoCancelarEspera: $('botao-cancelar-espera'),
   campoSenhaEntrar: $('campo-senha-entrar'),
   botaoCriar: $('botao-criar'),
   formEntrar: $('form-entrar'),
@@ -75,6 +80,8 @@ const estado = {
   minhaTela: null, // { tile, status }
   espectadores: [], // ids de quem vê a MINHA tela
   voltando: new Map(), // id -> timer (pessoas que podem voltar depois de o servidor reiniciar)
+  limite: 8, // máximo de pessoas da sala (o dono escolheu)
+  timerEspera: null, // sala cheia: tentando entrar de tempos em tempos
   saidasRecentes: new Map(), // nome -> timer (quem saiu há pouco: se voltar logo, o chat nem fica sabendo)
   naoLidas: 0,
   chatVisivel: true,
@@ -278,11 +285,17 @@ async function criarSala() {
   setCarregando(true);
   mostrarErroInicio('');
   try {
-    const senha = el.campoSenhaCriar.value;
+    const senha = el.checkSenha.checked ? el.campoSenhaCriar.value : '';
+    if (el.checkSenha.checked && !senha) {
+      el.campoSenhaCriar.focus();
+      throw new Error('Digite a senha da sala, ou desmarque "Proteger com senha".');
+    }
+    const limite = Number(el.selectLimite.value);
+    guardar('limite', String(limite));
     const resposta = await fetch(api('/api/salas'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ senha }),
+      body: JSON.stringify({ senha, limite }),
     });
     const dados = await resposta.json();
     if (!resposta.ok) throw new Error(dados.erro || 'Erro ao criar a sala');
@@ -306,7 +319,7 @@ el.campoNome.addEventListener('keydown', (e) => {
 });
 
 // ---------- Entrar com código ----------
-el.formEntrar.addEventListener('submit', async (e) => {
+el.formEntrar.addEventListener('submit', (e) => {
   e.preventDefault();
   if (!validarNome()) return;
   const codigo = normalizarCodigo(el.campoCodigo.value);
@@ -315,24 +328,38 @@ el.formEntrar.addEventListener('submit', async (e) => {
     el.campoCodigo.focus();
     return;
   }
+  pararEspera();
+  tentarEntrar(codigo);
+});
 
+async function consultarSala(codigo) {
+  const resposta = await fetch(api(`/api/salas/${codigo}`), { cache: 'no-store' });
+  const info = await resposta.json();
+  if (!resposta.ok) throw new Error(info.erro || 'Erro ao procurar a sala');
+  return info;
+}
+
+// -----------------------------------------------------
+// Tenta entrar: confere a sala antes (cheia? senha? trancada?)
+// -----------------------------------------------------
+async function tentarEntrar(codigo) {
   // Campo de senha ainda escondido? Pergunta como está a sala antes
   if (el.campoSenhaEntrar.hidden) {
     setCarregando(true);
     try {
-      const resposta = await fetch(api(`/api/salas/${codigo}`));
-      const info = await resposta.json();
-      if (!resposta.ok) throw new Error(info.erro || 'Erro ao procurar a sala');
+      const info = await consultarSala(codigo);
       if (!info.existe) throw new Error('Sala não encontrada. Confira o código.');
-      if (info.cheia) throw new Error('A sala está cheia.');
       if (info.trancada) throw new Error('A sala está trancada pelo dono.');
+      if (info.cheia) return esperarVaga(codigo, info);
       if (info.temSenha) {
+        pararEspera();
         el.campoSenhaEntrar.hidden = false;
         el.campoSenhaEntrar.focus();
         mostrarErroInicio('Esta sala tem senha. Digite e aperte Enter.');
         return;
       }
     } catch (erro) {
+      pararEspera();
       mostrarErroInicio(traduzirErro(erro));
       return;
     } finally {
@@ -340,12 +367,65 @@ el.formEntrar.addEventListener('submit', async (e) => {
     }
   }
 
+  pararEspera();
   const senha = el.campoSenhaEntrar.value;
-  conectarNaSala((sinal) => sinal.pedir('entrar', { codigo, nome: el.campoNome.value.trim(), senha }));
+  const entrou = await conectarNaSala((sinal) => sinal.pedir('entrar', { codigo, nome: el.campoNome.value.trim(), senha }));
+  // Alguém pegou a vaga antes? Volta a esperar
+  if (!entrou && el.erroInicio.textContent.includes('cheia')) esperarVaga(codigo);
+}
+
+// -----------------------------------------------------
+// Sala cheia: fica conferindo e entra sozinho quando abrir uma vaga
+// -----------------------------------------------------
+function esperarVaga(codigo, info) {
+  mostrarErroInicio('');
+  const lotacao = info ? ` (${info.pessoas}/${info.limite})` : '';
+  el.textoEspera.textContent = `A sala ${codigo} está cheia${lotacao}. Você entra sozinho quando abrir uma vaga...`;
+  el.esperaVaga.hidden = false;
+  document.title = 'Esperando vaga · Tela ao Vivo';
+
+  clearTimeout(estado.timerEspera);
+  estado.timerEspera = setTimeout(async () => {
+    try {
+      const atual = await consultarSala(codigo);
+      if (!atual.existe) {
+        pararEspera();
+        return mostrarErroInicio('A sala foi fechada.');
+      }
+      if (atual.cheia) return esperarVaga(codigo, atual); // continua esperando
+      tentarEntrar(codigo); // abriu vaga!
+    } catch {
+      esperarVaga(codigo, info); // falha de rede: tenta de novo
+    }
+  }, 4000);
+}
+
+function pararEspera() {
+  clearTimeout(estado.timerEspera);
+  estado.timerEspera = null;
+  el.esperaVaga.hidden = true;
+  if (document.title.startsWith('Esperando')) document.title = 'Tela ao Vivo';
+}
+
+el.botaoCancelarEspera.addEventListener('click', pararEspera);
+
+// ---------- Senha ao criar: só aparece se marcar a caixinha ----------
+el.checkSenha.addEventListener('change', () => {
+  el.campoSenhaCriar.hidden = !el.checkSenha.checked;
+  if (el.checkSenha.checked) el.campoSenhaCriar.focus();
+  else el.campoSenhaCriar.value = '';
 });
+el.campoSenhaCriar.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && estado.servidorPronto) criarSala();
+});
+
+// ---------- Limite: lembra a última escolha ----------
+const limiteSalvo = ler('limite');
+if (limiteSalvo && [...el.selectLimite.options].some((o) => o.value === limiteSalvo)) el.selectLimite.value = limiteSalvo;
 
 el.campoCodigo.addEventListener('input', () => {
   el.campoCodigo.value = normalizarCodigo(el.campoCodigo.value);
+  pararEspera(); // mudou o código: para de esperar a sala antiga
   // Trocou o código -> esconde a senha de novo (pode ser outra sala)
   el.campoSenhaEntrar.hidden = true;
   el.campoSenhaEntrar.value = '';
@@ -441,6 +521,7 @@ function aplicarEstado(info) {
   }
 
   estado.donoId = info.donoId;
+  estado.limite = info.limites?.maxPessoas ?? estado.limite;
   aplicarTrancada(info.trancada);
   renderizarPessoas();
 }
@@ -933,7 +1014,7 @@ function renderizarPessoas() {
     item.append(direita);
     el.listaPessoas.append(item);
   }
-  el.contadorPessoas.textContent = estado.pessoas.size;
+  el.contadorPessoas.textContent = `${estado.pessoas.size}/${estado.limite}`;
   atualizarInfoEspectadores();
 }
 
