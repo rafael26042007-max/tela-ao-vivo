@@ -133,11 +133,12 @@ class Sala {
   }
 
   // ---------- Tira alguém da sala de vez ----------
-  remover(participante) {
+  // motivo: 'saiu' (normal) ou 'removido' (pelo dono)
+  remover(participante, motivo = 'saiu') {
     clearTimeout(participante.timerSaida);
     if (!this.participantes.delete(participante.id)) return;
     this.idsQueSairam.add(participante.id);
-    this.enviarParaTodos('participanteSaiu', { id: participante.id });
+    this.enviarParaTodos('participanteSaiu', { id: participante.id, motivo });
     if (this.donoId === participante.id) {
       // O dono pode ter só apertado F5: espera 15s antes de passar o dono adiante
       this.donoId = null;
@@ -178,7 +179,8 @@ class Participante {
   }
 
   resumo() {
-    return { id: this.id, nome: this.nome, transmitindo: this.transmitindo };
+    // ausente = a conexão caiu e a pessoa ainda pode voltar (ex: celular com a tela apagada)
+    return { id: this.id, nome: this.nome, transmitindo: this.transmitindo, ausente: !this.ws };
   }
 }
 
@@ -351,6 +353,7 @@ function tratarConexao(ws) {
         existente.timerSaida = null;
         if (existente.ws && existente.ws !== ws) existente.ws.close(4001, 'Conectado em outro lugar');
         existente.ws = ws;
+        s.enviarParaTodos('ausente', { id: existente.id, ausente: false }, existente.id);
         participante = existente;
         return estadoParaCliente(s, existente, { recriada, reentrou: false });
       }
@@ -424,7 +427,7 @@ function tratarConexao(ws) {
       s.expulsos.add(alvo.id);
       enviar(alvo.ws, 'expulso', {});
       alvo.ws?.close(4002, 'Removido pelo dono');
-      s.remover(alvo);
+      s.remover(alvo, 'removido');
       s.enviarParaTodos('aviso', { texto: `${alvo.nome} foi removido(a) pelo dono.` });
     },
 
@@ -479,6 +482,7 @@ function tratarConexao(ws) {
     const p = participante;
     if (!p || p.ws !== ws) return;
     p.ws = null;
+    p.sala.enviarParaTodos('ausente', { id: p.id, ausente: true });
     p.timerSaida = setTimeout(() => p.sala.remover(p), config.segundosParaReconectar * 1000);
   });
 }

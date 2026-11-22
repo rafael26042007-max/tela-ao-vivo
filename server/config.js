@@ -57,8 +57,9 @@ module.exports = {
   maxPessoasPorSala: Number(process.env.MAX_PESSOAS || 8),
   maxTransmissoesPorSala: Number(process.env.MAX_TRANSMISSOES || 4),
   minutosSalaVazia: Number(process.env.MINUTOS_SALA_VAZIA || 30),
-  // Tempo pra voltar se a conexão com o servidor cair (o vídeo P2P continua)
-  segundosParaReconectar: Number(process.env.SEGUNDOS_RECONECTAR || 30),
+  // Tempo pra voltar se a conexão com o servidor cair (o vídeo P2P continua).
+  // 90s: no celular, apagar a tela ou trocar de app derruba a conexão por um tempo.
+  segundosParaReconectar: Number(process.env.SEGUNDOS_RECONECTAR || 90),
   tamanhoMaxSenha: 64,
 
   // ---------- Bilhetes (voltar pra sala depois de F5 ou reinício) ----------

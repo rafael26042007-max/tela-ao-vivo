@@ -75,6 +75,7 @@ const estado = {
   minhaTela: null, // { tile, status }
   espectadores: [], // ids de quem vê a MINHA tela
   voltando: new Map(), // id -> timer (pessoas que podem voltar depois de o servidor reiniciar)
+  saidasRecentes: new Map(), // nome -> timer (quem saiu há pouco: se voltar logo, o chat nem fica sabendo)
   naoLidas: 0,
   chatVisivel: true,
   mudandoTransmissao: false,
@@ -102,6 +103,18 @@ function lerSessao() {
 }
 function apagarSessao() {
   try { sessionStorage.removeItem(CHAVE_SESSAO); } catch { /* ok */ }
+}
+
+// Motivo de ter voltado pra tela inicial (ex: "Você foi removido da sala")
+const CHAVE_AVISO = 'tela-ao-vivo-aviso';
+function lerAvisoGuardado() {
+  try {
+    const texto = sessionStorage.getItem(CHAVE_AVISO);
+    sessionStorage.removeItem(CHAVE_AVISO);
+    return texto;
+  } catch {
+    return null;
+  }
 }
 
 function normalizarCodigo(texto) {
@@ -234,6 +247,11 @@ el.campoNome.value = ler('nome') ?? '';
 const codigoDoLink = normalizarCodigo(new URLSearchParams(location.search).get('sala'));
 if (codigoDoLink) el.campoCodigo.value = codigoDoLink;
 (el.campoNome.value ? el.campoCodigo : el.campoNome).focus();
+const avisoGuardado = lerAvisoGuardado();
+if (avisoGuardado) {
+  el.erroInicio.textContent = avisoGuardado;
+  el.erroInicio.classList.add('destaque');
+}
 
 async function iniciar() {
   const pronto = await acordarServidor();
@@ -416,7 +434,7 @@ function aplicarEstado(info) {
 
   // ---------- Quem está na sala agora ----------
   for (const p of info.participantes) {
-    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo });
+    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo, ausente: p.ausente });
     if (p.id === estado.meuId) continue;
     estado.malha.par(p.id); // conexão direta com essa pessoa
     p.transmitindo ? garantirTile(p.id) : removerTile(p.id);
@@ -435,17 +453,41 @@ function registrarEventos(sinal) {
       clearTimeout(estado.voltando.get(p.id));
       estado.voltando.delete(p.id);
     }
-    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo });
+    // Saiu há menos de 1 minuto e voltou (F5, celular com a tela apagada...)? Não avisa nada no chat
+    const saidaRecente = estado.saidasRecentes.get(p.nome);
+    if (saidaRecente) {
+      clearTimeout(saidaRecente);
+      estado.saidasRecentes.delete(p.nome);
+    }
+    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo, ausente: p.ausente });
     estado.malha.par(p.id);
     if (p.transmitindo) garantirTile(p.id);
     renderizarPessoas();
-    if (!estavaVoltando) adicionarMensagemSistema(`${p.nome} entrou`);
+    if (!estavaVoltando && !saidaRecente) adicionarMensagemSistema(`${p.nome} entrou`);
   });
 
-  sinal.on('participanteSaiu', ({ id }) => {
+  sinal.on('participanteSaiu', ({ id, motivo }) => {
     const nome = estado.pessoas.get(id)?.nome;
     removerPessoa(id);
-    if (nome) adicionarMensagemSistema(`${nome} saiu`);
+    // Removido pelo dono: o servidor já manda o aviso certo ("foi removido(a)")
+    if (!nome || motivo === 'removido') return;
+    // Espera 1 minuto antes de escrever "saiu": se a pessoa voltar antes, o chat nem fica sabendo
+    clearTimeout(estado.saidasRecentes.get(nome));
+    estado.saidasRecentes.set(
+      nome,
+      setTimeout(() => {
+        estado.saidasRecentes.delete(nome);
+        adicionarMensagemSistema(`${nome} saiu`);
+      }, 60_000)
+    );
+  });
+
+  // A conexão de alguém caiu (ex: celular com a tela apagada): mostra "(voltando...)" em vez de sumir
+  sinal.on('ausente', ({ id, ausente }) => {
+    const pessoa = estado.pessoas.get(id);
+    if (!pessoa) return;
+    pessoa.ausente = ausente;
+    renderizarPessoas();
   });
 
   sinal.on('transmissao', ({ participanteId, ativo }) => {
@@ -475,10 +517,7 @@ function registrarEventos(sinal) {
   });
 
   // ---------- Removido pelo dono ----------
-  sinal.on('expulso', () => {
-    apagarSessao();
-    encerrarLocalmente('Você foi removido da sala pelo dono.');
-  });
+  sinal.on('expulso', () => voltarAoInicio('Você foi removido da sala pelo dono.'));
 
   // ---------- Conexão com o SERVIDOR (o vídeo P2P continua funcionando) ----------
   sinal.on('reiniciando', () => {
@@ -511,29 +550,27 @@ function registrarEventos(sinal) {
       }
       mostrarAviso(info.recriada ? 'O servidor foi atualizado e a sala foi restaurada!' : 'Reconectado ao servidor!');
     } catch (erro) {
-      apagarSessao();
-      encerrarLocalmente(`Não foi possível voltar pra sala (${erro.message}). Recarregue a página para entrar de novo.`);
+      voltarAoInicio(`Não foi possível voltar pra sala: ${erro.message}`);
     }
   });
 
   sinal.on('encerrado', ({ codigo, motivo }) => {
-    if (codigo === 4002) return; // já tratado em 'expulso'
-    apagarSessao();
-    encerrarLocalmente(`${motivo || 'Conexão encerrada'}. Recarregue a página para entrar de novo.`);
+    if (codigo === 4002) return voltarAoInicio('Você foi removido da sala pelo dono.');
+    voltarAoInicio(`${motivo || 'A conexão com a sala foi encerrada'}.`);
   });
 }
 
-// Fim da sala do meu lado: para tudo e deixa só o aviso
-function encerrarLocalmente(texto) {
+// -----------------------------------------------------
+// Fim da sala do meu lado (removido, sala encerrada...):
+// fecha tudo e volta pra tela inicial mostrando o motivo
+// -----------------------------------------------------
+function voltarAoInicio(texto) {
+  apagarSessao();
+  try { sessionStorage.setItem(CHAVE_AVISO, texto); } catch { /* ok */ }
   if (estado.malha?.transmitindo) estado.malha.pararTransmissao();
-  estado.minhaTela?.tile.remove();
-  estado.minhaTela = null;
   estado.malha?.fechar();
-  for (const id of [...estado.telas.keys()]) removerTile(id);
-  clearInterval(estado.timerPing);
-  el.botaoTransmitir.disabled = true;
-  el.formChat.querySelector('button').disabled = true;
-  mostrarAviso(texto, true);
+  estado.sinal?.fechar();
+  location.href = location.pathname; // tela inicial, sem o ?sala=
 }
 
 // ---------- Avisos da malha P2P ----------
@@ -880,7 +917,7 @@ function renderizarPessoas() {
     esquerda.style.setProperty('--cor', corDe(id));
     if (id === estado.donoId) esquerda.append(criar('span', 'coroa', ' 👑'));
     if (id === estado.meuId) esquerda.append(criar('span', 'voce', ' (você)'));
-    if (estado.voltando.has(id)) esquerda.append(criar('span', 'voce', ' (voltando...)'));
+    if (estado.voltando.has(id) || pessoa.ausente) esquerda.append(criar('span', 'voce', ' (voltando...)'));
     item.append(esquerda);
 
     const direita = criar('span', 'direita');

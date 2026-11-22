@@ -63,6 +63,9 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .linha input { flex: 1; }
 
 .erro { color: #f87171; min-height: 1.2em; }
+/* Motivo de ter voltado pra tela inicial (ex: removido da sala) */
+.erro.destaque { padding: 10px 14px; border: 1px solid #7f1d1d; background: #2a1215; border-radius: 8px; }
+.erro.destaque:empty { display: none; }
 
 /* Bolinha vermelha "ao vivo" */
 .marca { display: flex; align-items: center; gap: 10px; }
