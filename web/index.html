@@ -3,8 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Compartilhe a tela ao vivo com até 8 pessoas, direto do navegador. Grátis, sem instalar nada.">
   <title>Tela ao Vivo</title>
+  <meta name="description" content="Compartilhe a tela ao vivo com até 8 pessoas, direto do navegador. Grátis, sem instalar nada e nada é gravado.">
+  <meta name="theme-color" content="#0f1115">
+
+  <!-- Ícone da aba: bolinha vermelha "ao vivo" (SVG direto no endereço, sem arquivo) -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ef4444' fill-opacity='.25'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%23ef4444'/%3E%3C/svg%3E">
+
+  <!-- Prévia do link quando alguém cola o convite no Discord, WhatsApp etc. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Tela ao Vivo">
+  <meta property="og:title" content="Tela ao Vivo: entra aí na sala!">
+  <meta property="og:description" content="Assista e compartilhe telas ao vivo com até 8 pessoas, direto do navegador. Grátis e sem instalar nada.">
+  <meta property="og:image" content="https://rafael26042007-max.github.io/tela-ao-vivo/previa.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="pt_BR">
+  <meta name="twitter:card" content="summary_large_image">
+
   <!-- Caminhos relativos (./) pra funcionar no GitHub Pages (/tela-ao-vivo/) e no seu PC -->
   <link rel="stylesheet" href="./style.css">
 </head>
@@ -18,20 +34,29 @@
       <span class="ponto-ao-vivo"></span>
       <h1>Tela ao Vivo</h1>
     </div>
-    <p class="subtitulo">Compartilhe a tela com até 8 pessoas, direto do navegador. O vídeo vai direto de um PC pro outro.</p>
+    <p class="subtitulo">Assista e compartilhe telas ao vivo com até 8 pessoas, direto do navegador.</p>
+    <ul class="selos">
+      <li>✓ Grátis</li>
+      <li>✓ Sem instalar nada</li>
+      <li>✓ Nada é gravado</li>
+      <li>✓ O vídeo vai direto de um PC pro outro</li>
+    </ul>
 
     <!-- Estado do servidor (no plano grátis ele "dorme" e leva até 1 min pra acordar) -->
-    <p id="status-servidor" class="status-servidor">Conectando ao servidor...</p>
+    <div id="bloco-servidor" class="bloco-servidor">
+      <p id="status-servidor" class="status-servidor">Conectando ao servidor...</p>
+      <div id="progresso" class="progresso" hidden><div id="progresso-barra"></div></div>
+    </div>
 
     <label class="campo">
       <span>Seu nome</span>
-      <input id="campo-nome" type="text" maxlength="30" placeholder="Como vão te chamar?" autocomplete="nickname">
+      <input id="campo-nome" type="text" maxlength="30" placeholder="Como vão te chamar?" autocomplete="nickname" enterkeyhint="go">
     </label>
 
     <div class="cartoes">
       <section class="cartao">
         <h2>Criar uma sala</h2>
-        <p>Você recebe um código pra passar pros outros.</p>
+        <p>Você recebe um código pra passar pros outros e vira o dono da sala.</p>
         <input id="campo-senha-criar" type="password" maxlength="64" placeholder="Senha (opcional)" autocomplete="new-password">
         <button id="botao-criar" class="botao principal" disabled>Criar sala</button>
       </section>
@@ -50,8 +75,6 @@
     </div>
 
     <p id="erro-inicio" class="erro" role="alert"></p>
-
-    <!-- Aparece se o JavaScript não carregar (ex: abriu o arquivo direto, sem servidor) -->
     <noscript><p class="erro">Ative o JavaScript para usar o Tela ao Vivo.</p></noscript>
   </main>
 
@@ -70,15 +93,21 @@
       <div class="codigo-sala">
         <span>Código</span>
         <strong id="texto-codigo">------</strong>
-        <span id="icone-senha" title="Sala com senha" hidden>🔒</span>
+        <span id="icone-senha" title="Sala com senha" hidden>🔑</span>
+        <span id="selo-trancada" class="selo-trancada" hidden>🔒 Trancada</span>
         <button id="botao-copiar" class="botao pequeno">Copiar link</button>
       </div>
 
-      <button id="botao-sair" class="botao perigo pequeno">Sair</button>
+      <div class="acoes-topo">
+        <!-- Só o dono vê -->
+        <button id="botao-trancar" class="botao pequeno" hidden title="Trancada = ninguém novo consegue entrar">🔒 Trancar sala</button>
+        <button id="botao-sair" class="botao perigo pequeno">Sair</button>
+      </div>
     </header>
 
     <!-- ---------- Controles de transmissão ---------- -->
     <section class="controles">
+      <button id="botao-transmitir" class="botao principal">Transmitir minha tela</button>
       <label>
         Qualidade
         <select id="select-qualidade">
@@ -87,17 +116,21 @@
           <option value="fluido">Fluido (1080p, 30 fps)</option>
         </select>
       </label>
-      <label>
-        Codec
-        <select id="select-codec"></select>
-      </label>
       <label class="checkbox">
         <input id="check-audio" type="checkbox">
         Compartilhar áudio
       </label>
-      <button id="botao-transmitir" class="botao principal">Transmitir minha tela</button>
+      <details class="avancado">
+        <summary>Avançado</summary>
+        <label>
+          Codec
+          <select id="select-codec"></select>
+        </label>
+        <p class="info">VP8 funciona em qualquer navegador. H264 pode usar a placa de vídeo e gastar menos CPU.</p>
+      </details>
       <span id="info-espectadores" class="info"></span>
     </section>
+    <p id="dica-transmitir" class="dica">💡 Você pode transmitir a sua tela e assistir as dos outros ao mesmo tempo, com um usuário só.</p>
 
     <p id="aviso-sala" class="aviso" hidden></p>
 
@@ -107,6 +140,7 @@
         <div id="vazio" class="vazio">
           <p>Ninguém está transmitindo ainda.</p>
           <p>Clique em <strong>Transmitir minha tela</strong> ou espere alguém começar.</p>
+          <p class="info">Dá pra transmitir e assistir ao mesmo tempo. Clique em 📌 numa tela pra deixar ela grande.</p>
         </div>
       </section>
 
@@ -117,7 +151,7 @@
         </div>
 
         <div class="bloco chat">
-          <h3>Chat</h3>
+          <h3>Chat <span id="nao-lidas" class="nao-lidas" hidden>0</span></h3>
           <ul id="lista-chat" class="mensagens"></ul>
           <form id="form-chat" class="linha">
             <input id="campo-chat" type="text" maxlength="500" placeholder="Mensagem..." autocomplete="off">

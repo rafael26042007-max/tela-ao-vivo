@@ -3,13 +3,16 @@
 //
 // O vídeo NÃO passa por aqui: vai direto de um navegador pro outro.
 // Este servidor só:
-//   - guarda as salas (código, senha, quem está dentro, chat)
+//   - guarda as salas (código, senha, dono, quem está dentro, chat)
 //   - repassa as mensagens que os navegadores trocam pra se conectar
-//     (oferta/resposta SDP e candidatos ICE)
+//   - deixa a pessoa voltar pra sala (F5, queda de internet, servidor
+//     reiniciado) usando o bilhete criptografado (ver bilhete.js)
 // =====================================================
 const crypto = require('crypto');
 const config = require('./config');
 const { gerarHash, conferir } = require('./senha');
+const { criarBilhete, abrirBilhete } = require('./bilhete');
+const { obterIceServers } = require('./turn');
 const limites = require('./limites');
 
 // Sem 0/O e 1/I pra ninguém confundir na hora de digitar o código
@@ -19,9 +22,9 @@ const TAMANHO_CODIGO = 6;
 /** @type {Map<string, Sala>} código -> sala */
 const salas = new Map();
 
-// -----------------------------------------------------
+// =====================================================
 // Utilitários
-// -----------------------------------------------------
+// =====================================================
 function gerarCodigo() {
   let codigo;
   do {
@@ -37,17 +40,17 @@ function normalizarCodigo(texto) {
 
 // Remove caracteres de controle, espaços extras e corta no tamanho máximo
 function limparTexto(texto, max) {
-  return String(texto ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max);
+  return String(texto ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
 function enviar(ws, evento, dados) {
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ evento, dados }));
 }
 
-function mesmoToken(a, b) {
+function mesmoSegredo(a, b) {
   const x = Buffer.from(String(a ?? ''));
   const y = Buffer.from(String(b ?? ''));
-  return x.length === y.length && crypto.timingSafeEqual(x, y);
+  return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 }
 
 // =====================================================
@@ -57,10 +60,17 @@ class Sala {
   constructor(codigo, senhaGuardada = null) {
     this.codigo = codigo;
     this.senhaGuardada = senhaGuardada; // { sal, hash } ou null (sala aberta)
-    /** @type {Map<string, Participante>} */
+    this.chaveDono = crypto.randomBytes(18).toString('base64url'); // só quem criou recebe
+    this.donoId = null;
+    this.trancada = false; // trancada = ninguém novo entra
+    this.recriada = false; // true = recriada depois de o servidor reiniciar
+    this.expulsos = new Set(); // ids que o dono removeu (não podem voltar)
+    this.idsQueSairam = new Set();
+    /** @type {Map<string, Participante>} (ordem de entrada) */
     this.participantes = new Map();
     this.chat = []; // últimas mensagens (quem entra depois vê o histórico)
     this.timerFechamento = null;
+    this.timerDono = null;
     this.agendarFechamento(); // se ninguém entrar, a sala some sozinha
   }
 
@@ -77,6 +87,7 @@ class Sala {
 
   fechar() {
     this.cancelarFechamento();
+    clearTimeout(this.timerDono);
     for (const p of this.participantes.values()) {
       clearTimeout(p.timerSaida);
       p.ws?.close(4000, 'Sala encerrada');
@@ -100,12 +111,55 @@ class Sala {
     return [...this.participantes.values()].map((p) => p.resumo());
   }
 
-  // ---------- Remove alguém de vez ----------
+  // ---------- Nome repetido ganha número: "Ana", "Ana 2", "Ana 3"... ----------
+  nomeUnico(nome) {
+    const usados = new Set([...this.participantes.values()].map((p) => p.nome.toLowerCase()));
+    if (!usados.has(nome.toLowerCase())) return nome;
+    let n = 2;
+    while (usados.has(`${nome} ${n}`.toLowerCase())) n++;
+    return `${nome} ${n}`;
+  }
+
+  // ---------- Coloca alguém na sala ----------
+  adicionar(ws, nome, { id, dono = false, transmitindo = false } = {}) {
+    const p = new Participante(ws, this, this.nomeUnico(nome), id);
+    p.transmitindo = transmitindo;
+    this.participantes.set(p.id, p);
+    if (dono) this.donoId = p.id;
+    this.cancelarFechamento();
+    this.enviarParaTodos('participanteEntrou', p.resumo(), p.id);
+    if (dono) this.enviarParaTodos('dono', { id: p.id }, p.id);
+    return p;
+  }
+
+  // ---------- Tira alguém da sala de vez ----------
   remover(participante) {
     clearTimeout(participante.timerSaida);
     if (!this.participantes.delete(participante.id)) return;
+    this.idsQueSairam.add(participante.id);
     this.enviarParaTodos('participanteSaiu', { id: participante.id });
+    if (this.donoId === participante.id) {
+      // O dono pode ter só apertado F5: espera 15s antes de passar o dono adiante
+      this.donoId = null;
+      clearTimeout(this.timerDono);
+      this.timerDono = setTimeout(() => {
+        if (!this.donoId) this.passarDono();
+      }, 15_000);
+    }
     if (this.participantes.size === 0 && salas.has(this.codigo)) this.agendarFechamento();
+  }
+
+  // ---------- O dono saiu: quem está há mais tempo vira dono ----------
+  passarDono() {
+    const proximo = this.participantes.values().next().value ?? null;
+    this.donoId = proximo?.id ?? null;
+    if (!proximo) return;
+    this.enviarParaTodos('dono', { id: proximo.id });
+    enviar(proximo.ws, 'bilhete', { bilhete: bilheteDe(proximo) }); // o bilhete novo diz que ele é dono
+  }
+
+  ehDono(participante) {
+    return this.donoId === participante.id;
   }
 }
 
@@ -113,9 +167,8 @@ class Sala {
 // Classe Participante
 // =====================================================
 class Participante {
-  constructor(ws, sala, nome) {
-    this.id = crypto.randomUUID();
-    this.token = crypto.randomBytes(24).toString('base64url'); // pra reconectar se a conexão cair
+  constructor(ws, sala, nome, id = crypto.randomUUID()) {
+    this.id = id;
     this.ws = ws;
     this.sala = sala;
     this.nome = nome;
@@ -129,20 +182,38 @@ class Participante {
   }
 }
 
-// Estado da sala que o navegador recebe ao entrar (ou reconectar)
-function estadoParaCliente(sala, participante) {
+// Bilhete da pessoa: tudo que precisa pra recriar a sala se o servidor reiniciar
+function bilheteDe(p) {
+  const s = p.sala;
+  return criarBilhete({
+    codigo: s.codigo,
+    id: p.id,
+    nome: p.nome,
+    dono: s.donoId === p.id,
+    senha: s.senhaGuardada
+      ? { sal: s.senhaGuardada.sal.toString('base64'), hash: s.senhaGuardada.hash.toString('base64') }
+      : null,
+  });
+}
+
+// Estado da sala que o navegador recebe ao entrar (ou voltar)
+async function estadoParaCliente(sala, participante, extra = {}) {
   return {
     codigo: sala.codigo,
     temSenha: !!sala.senhaGuardada,
     meuId: participante.id,
-    token: participante.token,
+    meuNome: participante.nome,
+    bilhete: bilheteDe(participante),
+    donoId: sala.donoId,
+    trancada: sala.trancada,
     participantes: sala.resumo(),
     chat: sala.chat,
-    iceServers: config.iceServers,
+    iceServers: await obterIceServers(),
     limites: {
       maxPessoas: config.maxPessoasPorSala,
       maxTransmissoes: config.maxTransmissoesPorSala,
     },
+    ...extra,
   };
 }
 
@@ -157,10 +228,11 @@ async function criarSala({ senha } = {}) {
   if (senhaTexto.length > config.tamanhoMaxSenha) throw new Error('Senha muito longa.');
   const senhaGuardada = senhaTexto ? await gerarHash(senhaTexto) : null;
 
-  const codigo = gerarCodigo();
-  salas.set(codigo, new Sala(codigo, senhaGuardada));
-  console.log(`Sala ${codigo} criada${senhaGuardada ? ' (com senha)' : ''}`);
-  return codigo;
+  const sala = new Sala(gerarCodigo(), senhaGuardada);
+  salas.set(sala.codigo, sala);
+  console.log(`Sala ${sala.codigo} criada${senhaGuardada ? ' (com senha)' : ''}`);
+  // A chave de dono vai só pra quem criou: quem entrar com ela vira dono
+  return { codigo: sala.codigo, chaveDono: sala.chaveDono };
 }
 
 // Usado pela tela inicial pra saber se precisa pedir senha
@@ -172,6 +244,7 @@ function infoSala(codigoBruto) {
     codigo: sala.codigo,
     temSenha: !!sala.senhaGuardada,
     cheia: sala.participantes.size >= config.maxPessoasPorSala,
+    trancada: sala.trancada,
   };
 }
 
@@ -181,30 +254,44 @@ function estatisticas() {
   return { salas: salas.size, pessoas };
 }
 
+// Avisa todo mundo antes de o servidor desligar (atualização no Render)
+function avisarReinicio() {
+  for (const s of salas.values()) s.enviarParaTodos('reiniciando', {});
+}
+
 // =====================================================
 // Sinalização: cada conexão WebSocket é um participante
 // Formato: cliente -> { id, metodo, dados }
 //          servidor -> { id, ok, dados | erro }   (resposta)
 //          servidor -> { evento, dados }          (aviso)
 // =====================================================
-function tratarConexao(ws, ip) {
+function tratarConexao(ws) {
   /** @type {Participante | null} */
   let participante = null;
 
   const sala = () => participante.sala;
 
+  function exigirDono() {
+    if (!sala().ehDono(participante)) throw new Error('Só o dono da sala pode fazer isso.');
+  }
+
   // ---------- Métodos que o navegador pode chamar ----------
   const metodos = {
+    // -------------------------------------------------
     // Entrar numa sala com o código (e a senha, se tiver)
-    async entrar({ codigo, nome, senha }) {
+    // -------------------------------------------------
+    async entrar({ codigo, nome, senha, chaveDono }) {
       if (participante) throw new Error('Você já está numa sala');
 
       const s = salas.get(normalizarCodigo(codigo));
       if (!s) throw new Error('Sala não encontrada. Confira o código.');
 
-      if (s.senhaGuardada) {
+      const ehCriador = mesmoSegredo(chaveDono, s.chaveDono);
+      if (s.trancada && !ehCriador) throw new Error('A sala está trancada pelo dono.');
+
+      if (s.senhaGuardada && !ehCriador) {
         if (!senha) throw new Error('Esta sala tem senha.');
-        // Limite também por sala: protege a senha mesmo se alguém trocar de IP
+        // Limite por sala: protege a senha de quem fica chutando
         if (!limites.senhaPorSala.pode(s.codigo)) {
           throw new Error('Muitas senhas erradas nesta sala. Espere alguns minutos.');
         }
@@ -218,26 +305,73 @@ function tratarConexao(ws, ip) {
         throw new Error(`A sala está cheia (máximo ${config.maxPessoasPorSala} pessoas).`);
       }
 
-      participante = new Participante(ws, s, limparTexto(nome, 30) || 'Anônimo');
-      s.participantes.set(participante.id, participante);
-      s.cancelarFechamento();
-      s.enviarParaTodos('participanteEntrou', participante.resumo(), participante.id);
+      participante = s.adicionar(ws, limparTexto(nome, 30) || 'Anônimo', { dono: ehCriador && !s.donoId });
       return estadoParaCliente(s, participante);
     },
 
-    // Voltar pra sala depois que a conexão com o servidor caiu
-    async reconectar({ codigo, id, token }) {
+    // -------------------------------------------------
+    // Voltar pra sala com o bilhete:
+    //  - a internet caiu e voltou (mesma página): continua igual
+    //  - a pessoa apertou F5 (recarregou: true): entra de novo, sem pedir senha
+    //  - o servidor reiniciou e a sala sumiu: recria com o mesmo código/senha/dono
+    // -------------------------------------------------
+    async voltar({ bilhete, recarregou = false, transmitindo = false }) {
       if (participante) throw new Error('Você já está numa sala');
-      const s = salas.get(normalizarCodigo(codigo));
-      const p = s?.participantes.get(String(id));
-      if (!p || !mesmoToken(token, p.token)) throw new Error('Não foi possível voltar pra sala.');
+      const b = abrirBilhete(bilhete);
+      if (!b) throw new Error('Não foi possível voltar pra sala.');
 
-      clearTimeout(p.timerSaida);
-      p.timerSaida = null;
-      if (p.ws && p.ws !== ws) p.ws.close(4001, 'Conectado em outro lugar');
-      p.ws = ws;
-      participante = p;
-      return estadoParaCliente(s, p);
+      // ---------- A sala sumiu (servidor reiniciou)? Recria ----------
+      let s = salas.get(b.codigo);
+      if (!s) {
+        if (salas.size >= config.maxSalas) throw new Error('O servidor atingiu o limite de salas.');
+        const senha = b.senha ? { sal: Buffer.from(b.senha.sal, 'base64'), hash: Buffer.from(b.senha.hash, 'base64') } : null;
+        s = new Sala(b.codigo, senha);
+        s.recriada = true;
+        s.recriadaEm = Date.now();
+        salas.set(s.codigo, s);
+        console.log(`Sala ${s.codigo} recriada depois do reinício`);
+        // Se o dono não voltar em 30s, passa pra quem já voltou
+        s.timerDono = setTimeout(() => {
+          if (!s.donoId && s.participantes.size) s.passarDono();
+        }, 30_000);
+      }
+
+      // Todo mundo que volta nos 2 primeiros minutos fica sabendo que a sala foi restaurada
+      const recriada = !!s.recriadaEm && Date.now() - s.recriadaEm < 120_000;
+
+      if (s.expulsos.has(b.id)) throw new Error('Você foi removido desta sala pelo dono.');
+
+      // Manter o mesmo id = as conexões de vídeo com os outros continuam
+      const existente = s.participantes.get(b.id);
+      const manterId = !recarregou && (!!existente || (s.recriada && !s.idsQueSairam.has(b.id)));
+
+      // ---------- Caso 1: só a conexão caiu e voltou ----------
+      if (existente && manterId) {
+        clearTimeout(existente.timerSaida);
+        existente.timerSaida = null;
+        if (existente.ws && existente.ws !== ws) existente.ws.close(4001, 'Conectado em outro lugar');
+        existente.ws = ws;
+        participante = existente;
+        return estadoParaCliente(s, existente, { recriada, reentrou: false });
+      }
+
+      // ---------- Caso 2: F5 ou voltou tarde: entra de novo ----------
+      if (existente) {
+        // Ex: aba duplicada com o mesmo bilhete -> a aba antiga é desconectada
+        if (existente.ws && existente.ws !== ws) existente.ws.close(4001, 'Você entrou na sala em outra aba');
+        s.remover(existente);
+      }
+      if (s.participantes.size >= config.maxPessoasPorSala) throw new Error('A sala está cheia.');
+
+      const podeSerDono = b.dono && (!s.donoId || s.donoId === b.id);
+      const podeTransmitir = manterId && transmitindo && s.quantosTransmitindo() < config.maxTransmissoesPorSala;
+      participante = s.adicionar(ws, b.nome, {
+        id: manterId ? b.id : undefined,
+        dono: podeSerDono,
+        transmitindo: podeTransmitir,
+      });
+      if (podeSerDono) clearTimeout(s.timerDono);
+      return estadoParaCliente(s, participante, { recriada, reentrou: !manterId });
     },
 
     // Repassa a mensagem de conexão P2P pra outra pessoa da sala
@@ -279,12 +413,34 @@ function tratarConexao(ws, ip) {
       s.enviarParaTodos('chat', mensagem);
     },
 
+    // -------------------------------------------------
+    // Ferramentas do dono
+    // -------------------------------------------------
+    async expulsar({ id }) {
+      exigirDono();
+      const s = sala();
+      const alvo = s.participantes.get(String(id));
+      if (!alvo || alvo === participante) throw new Error('Pessoa não encontrada.');
+      s.expulsos.add(alvo.id);
+      enviar(alvo.ws, 'expulso', {});
+      alvo.ws?.close(4002, 'Removido pelo dono');
+      s.remover(alvo);
+      s.enviarParaTodos('aviso', { texto: `${alvo.nome} foi removido(a) pelo dono.` });
+    },
+
+    async trancar({ trancada }) {
+      exigirDono();
+      const s = sala();
+      s.trancada = !!trancada;
+      s.enviarParaTodos('sala', { trancada: s.trancada });
+    },
+
     // Só pra manter a conexão ativa (o Render desliga serviços sem tráfego)
     async ping() {
       return { pong: Date.now() };
     },
 
-    // Sair de propósito (botão "Sair")
+    // Sair de propósito (botão "Sair" ou fechar a aba)
     async sair() {
       const p = participante;
       participante = null;
@@ -309,7 +465,7 @@ function tratarConexao(ws, ip) {
     try {
       const funcao = Object.hasOwn(metodos, metodo) ? metodos[metodo] : null;
       if (!funcao) throw new Error('Método desconhecido');
-      const livres = ['entrar', 'reconectar', 'ping'];
+      const livres = ['entrar', 'voltar', 'ping'];
       if (!livres.includes(metodo) && !participante) throw new Error('Entre numa sala primeiro');
       responder(true, (await funcao(dados ?? {})) ?? null);
     } catch (erro) {
@@ -327,4 +483,4 @@ function tratarConexao(ws, ip) {
   });
 }
 
-module.exports = { criarSala, infoSala, estatisticas, tratarConexao };
+module.exports = { criarSala, infoSala, estatisticas, tratarConexao, avisarReinicio };

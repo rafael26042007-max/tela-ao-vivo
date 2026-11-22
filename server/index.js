@@ -11,7 +11,8 @@ const { WebSocketServer } = require('ws');
 
 const config = require('./config');
 const { obterCertificado } = require('./certificado');
-const { criarSala, infoSala, estatisticas, tratarConexao } = require('./salas');
+const { criarSala, infoSala, estatisticas, tratarConexao, avisarReinicio } = require('./salas');
+const { temTurn } = require('./turn');
 const limites = require('./limites');
 
 const PASTA_WEB = path.join(__dirname, '..', 'web');
@@ -173,8 +174,9 @@ async function tratarRequisicao(req, res) {
         return responderJson(req, res, 400, { erro: erro.message });
       }
       limites.criacaoDeSalas.registrar(ip);
-      const codigo = await criarSala({ senha: corpo.senha });
-      return responderJson(req, res, 201, { codigo });
+      // chaveDono: só quem criou recebe; quem entra com ela vira o dono da sala
+      const { codigo, chaveDono } = await criarSala({ senha: corpo.senha });
+      return responderJson(req, res, 201, { codigo, chaveDono });
     }
 
     // ---------- Consultar sala ----------
@@ -215,7 +217,7 @@ async function iniciar() {
   wss.on('connection', (ws, req) => {
     ws.vivo = true;
     ws.on('pong', () => (ws.vivo = true));
-    tratarConexao(ws, ipDe(req));
+    tratarConexao(ws);
   });
 
   // Derruba conexões "fantasmas" (internet caiu sem fechar a aba)
@@ -248,15 +250,21 @@ async function iniciar() {
     console.log(`  Neste PC:      ${protocolo}://localhost:${config.porta}`);
     if (config.usarHttps) console.log(`  Na sua rede:   ${protocolo}://${config.ipLocal}:${config.porta}`);
     if (config.origensPermitidas.length) console.log(`  Sites liberados: ${config.origensPermitidas.join(', ')}`);
+    console.log(`  TURN:          ${temTurn() ? 'configurado' : 'não configurado (só STUN)'}`);
+    if (!config.temSegredoFixo) {
+      console.log('  Aviso: sem SEGREDO, as salas não são recriadas se o servidor reiniciar.');
+    }
     console.log('');
   });
 }
 
-// Ctrl+C ou parada do Render: encerra na hora
+// Ctrl+C ou parada do Render (atualização): avisa as salas e encerra.
+// Os navegadores reconectam no servidor novo e recriam a sala com o bilhete.
 for (const sinal of ['SIGINT', 'SIGTERM']) {
   process.on(sinal, () => {
     console.log('\n  Encerrando o servidor...');
-    process.exit(0);
+    avisarReinicio();
+    setTimeout(() => process.exit(0), 300); // dá tempo do aviso sair
   });
 }
 

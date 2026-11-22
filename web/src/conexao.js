@@ -68,8 +68,9 @@ export class Sinalizacao {
 
       if (!abriu && this.tentativas === 0) return aoFalhar?.(); // nem chegou a conectar
       if (this.fechadoDeProposito) return;
-      // 4000/4001 = o servidor fechou de propósito (sala encerrada / outra aba)
-      if (e.code === 4000 || e.code === 4001) return this.emitir('encerrado', { motivo: e.reason });
+      // 4000/4001/4002 = o servidor fechou de propósito
+      // (sala encerrada / entrou em outra aba / removido pelo dono)
+      if (e.code >= 4000 && e.code <= 4002) return this.emitir('encerrado', { codigo: e.code, motivo: e.reason });
 
       if (this.tentativas === 0) this.emitir('desconectado');
       this.agendarReconexao();

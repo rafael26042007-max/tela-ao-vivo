@@ -12,6 +12,13 @@ services:
     startCommand: node server/index.js
     healthCheckPath: /saude
     autoDeploy: true
+    # Só reinicia o servidor quando o código DELE mudar.
+    # Mudanças no site (web/), README etc. não derrubam ninguém.
+    buildFilter:
+      paths:
+        - server/**
+        - package.json
+        - package-lock.json
     envVars:
       # Site do GitHub Pages que pode usar este servidor
       - key: ORIGENS_PERMITIDAS
@@ -23,3 +30,10 @@ services:
         value: "8"
       - key: MAX_TRANSMISSOES
         value: "4"
+      # Chave dos bilhetes: o Render gera uma aleatória uma vez e guarda.
+      # É ela que permite recriar as salas depois de uma atualização.
+      - key: SEGREDO
+        generateValue: true
+      # TURN (opcional): configure no painel do Render, em Environment
+      #   CLOUDFLARE_TURN_ID e CLOUDFLARE_TURN_TOKEN  (1.000 GB grátis/mês)
+      #   ou METERED_CHAVE                            (20 GB grátis/mês)

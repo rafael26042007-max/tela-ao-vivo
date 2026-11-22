@@ -61,12 +61,24 @@ module.exports = {
   segundosParaReconectar: Number(process.env.SEGUNDOS_RECONECTAR || 30),
   tamanhoMaxSenha: 64,
 
+  // ---------- Bilhetes (voltar pra sala depois de F5 ou reinício) ----------
+  // No Render, SEGREDO é gerado sozinho (render.yaml) e fica salvo.
+  // Sem SEGREDO, uma chave nova é criada a cada início (bilhetes antigos param de valer).
+  segredo: process.env.SEGREDO || require('crypto').randomBytes(32).toString('hex'),
+  temSegredoFixo: !!process.env.SEGREDO,
+
   // ---------- Servidores ICE enviados pros navegadores ----------
-  // STUN: descobre o IP público (grátis). TURN: opcional, pra redes que bloqueiam P2P.
-  iceServers: [
-    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    ...(process.env.TURN_URL
-      ? [{ urls: lista(process.env.TURN_URL), username: process.env.TURN_USUARIO, credential: process.env.TURN_SENHA }]
-      : []),
-  ],
+  // STUN: descobre o IP público (grátis).
+  iceServersBase: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],
+
+  // TURN: retransmite o vídeo quando a rede bloqueia a conexão direta.
+  // Opção 1 (recomendada): Cloudflare, 1.000 GB grátis por mês
+  cloudflareTurnId: process.env.CLOUDFLARE_TURN_ID || null,
+  cloudflareTurnToken: process.env.CLOUDFLARE_TURN_TOKEN || null,
+  // Opção 2: Open Relay (Metered), 20 GB grátis por mês
+  meteredChave: process.env.METERED_CHAVE || null,
+  // Opção 3: qualquer servidor TURN com usuário e senha fixos
+  turnManual: process.env.TURN_URL
+    ? { urls: lista(process.env.TURN_URL), username: process.env.TURN_USUARIO, credential: process.env.TURN_SENHA }
+    : null,
 };

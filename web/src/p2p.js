@@ -292,7 +292,11 @@ export class MalhaP2P {
         if (par.transceptores.video) this.limitarVideo(par.transceptores.video.sender, q);
       }
     }
-    this.emitir('espectadores', vendo);
+    // Manda os ids de quem está vendo (o app mostra os nomes)
+    this.emitir(
+      'espectadores',
+      [...this.pares.values()].filter((p) => !p.ocultoPeloOutro).map((p) => p.id)
+    );
   }
 
   // =====================================================

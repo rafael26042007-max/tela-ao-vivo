@@ -22,6 +22,8 @@ const el = {
   telaInicio: $('tela-inicio'),
   telaSala: $('tela-sala'),
   statusServidor: $('status-servidor'),
+  progresso: $('progresso'),
+  progressoBarra: $('progresso-barra'),
   campoNome: $('campo-nome'),
   campoCodigo: $('campo-codigo'),
   campoSenhaCriar: $('campo-senha-criar'),
@@ -32,7 +34,9 @@ const el = {
 
   textoCodigo: $('texto-codigo'),
   iconeSenha: $('icone-senha'),
+  seloTrancada: $('selo-trancada'),
   botaoCopiar: $('botao-copiar'),
+  botaoTrancar: $('botao-trancar'),
   botaoSair: $('botao-sair'),
   selectQualidade: $('select-qualidade'),
   selectCodec: $('select-codec'),
@@ -45,6 +49,7 @@ const el = {
   contadorPessoas: $('contador-pessoas'),
   listaPessoas: $('lista-pessoas'),
   listaChat: $('lista-chat'),
+  naoLidas: $('nao-lidas'),
   formChat: $('form-chat'),
   campoChat: $('campo-chat'),
 };
@@ -58,12 +63,20 @@ const estado = {
   malha: null,
   codigo: null,
   meuId: null,
-  token: null, // pra voltar pra sala se a conexão com o servidor cair
+  bilhete: null, // comprovante pra voltar pra sala (F5, queda, servidor reiniciado)
+  donoId: null,
+  trancada: false,
   pessoas: new Map(), // id -> { nome, transmitindo }
-  telas: new Map(), // id -> { tile, video, status, ... } (telas dos outros)
+  telas: new Map(), // id -> { tile, video, ... } (telas dos outros)
   streams: new Map(), // id -> MediaStream recebido daquela pessoa
   mudos: new Set(), // ids com o som desligado por mim
+  volumes: new Map(), // id -> volume (0 a 1)
+  destaque: null, // id da tela em destaque (grande)
   minhaTela: null, // { tile, status }
+  espectadores: [], // ids de quem vê a MINHA tela
+  voltando: new Map(), // id -> timer (pessoas que podem voltar depois de o servidor reiniciar)
+  naoLidas: 0,
+  chatVisivel: true,
   mudandoTransmissao: false,
   timerPing: null,
 };
@@ -78,6 +91,19 @@ function ler(chave) {
   try { return localStorage.getItem(chave); } catch { return null; }
 }
 
+// ---------- Sessão da aba (pra voltar depois do F5) ----------
+// sessionStorage: some quando a aba fecha, mas sobrevive ao F5
+const CHAVE_SESSAO = 'tela-ao-vivo-sessao';
+function salvarSessao() {
+  try { sessionStorage.setItem(CHAVE_SESSAO, JSON.stringify({ codigo: estado.codigo, bilhete: estado.bilhete })); } catch { /* ok */ }
+}
+function lerSessao() {
+  try { return JSON.parse(sessionStorage.getItem(CHAVE_SESSAO) || 'null'); } catch { return null; }
+}
+function apagarSessao() {
+  try { sessionStorage.removeItem(CHAVE_SESSAO); } catch { /* ok */ }
+}
+
 function normalizarCodigo(texto) {
   return String(texto ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
 }
@@ -90,6 +116,13 @@ function criar(tag, classe, texto) {
 }
 
 const nomeDe = (id) => estado.pessoas.get(id)?.nome ?? 'Alguém';
+
+// Cada pessoa ganha uma cor fixa (calculada a partir do id)
+function corDe(id) {
+  let soma = 0;
+  for (const c of String(id)) soma = (soma * 31 + c.charCodeAt(0)) % 360;
+  return `hsl(${soma}, 70%, 65%)`;
+}
 
 let timerAviso = null;
 function mostrarAviso(texto, fixo = false) {
@@ -113,6 +146,29 @@ function setCarregando(sim) {
   el.formEntrar.querySelector('button').disabled = bloqueado;
 }
 
+const traduzirErro = (erro) => (erro.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : erro.message);
+
+// Botão de "clique duas vezes pra confirmar" (sem janela de confirmação do navegador)
+function confirmarComSegundoClique(botao, textoConfirmar, acao) {
+  const textoOriginal = botao.textContent;
+  let timer = null;
+  botao.addEventListener('click', () => {
+    if (botao.dataset.confirmando) {
+      clearTimeout(timer);
+      delete botao.dataset.confirmando;
+      botao.textContent = textoOriginal;
+      acao();
+      return;
+    }
+    botao.dataset.confirmando = '1';
+    botao.textContent = textoConfirmar;
+    timer = setTimeout(() => {
+      delete botao.dataset.confirmando;
+      botao.textContent = textoOriginal;
+    }, 3000);
+  });
+}
+
 // =====================================================
 // ACORDAR O SERVIDOR
 // No plano grátis do Render, ele desliga depois de 15 min parado
@@ -122,23 +178,37 @@ async function acordarServidor() {
   const inicio = Date.now();
   el.statusServidor.className = 'status-servidor';
   el.statusServidor.textContent = 'Conectando ao servidor...';
+
+  // ---------- Barra de progresso (aparece se demorar) ----------
+  const ESPERADO_MS = 60_000;
+  let timerBarra = null;
   const avisoLento = setTimeout(() => {
-    el.statusServidor.textContent = 'Acordando o servidor... (no plano grátis isso pode levar até 1 minuto)';
+    el.statusServidor.textContent = 'Acordando o servidor... Isso só acontece quando ninguém usou o site por um tempo.';
+    el.progresso.hidden = false;
+    timerBarra = setInterval(() => {
+      const passou = Date.now() - inicio;
+      // Vai até 95% em ~1 min e fica esperando ali
+      el.progressoBarra.style.width = `${Math.min(95, (passou / ESPERADO_MS) * 95)}%`;
+    }, 300);
   }, 2500);
+
+  const terminar = () => {
+    clearTimeout(avisoLento);
+    clearInterval(timerBarra);
+    el.progressoBarra.style.width = '100%';
+    setTimeout(() => (el.progresso.hidden = true), 400);
+  };
 
   while (Date.now() - inicio < 120_000) {
     try {
-      const controle = new AbortController();
-      const limite = setTimeout(() => controle.abort(), 15_000);
-      const resposta = await fetch(api('/saude'), { signal: controle.signal, cache: 'no-store' });
-      clearTimeout(limite);
+      const resposta = await fetch(api('/saude'), { signal: AbortSignal.timeout(15_000), cache: 'no-store' });
       if (resposta.ok) {
-        clearTimeout(avisoLento);
+        terminar();
         estado.servidorPronto = true;
         el.statusServidor.className = 'status-servidor ok';
         el.statusServidor.textContent = 'Servidor online';
         setCarregando(false);
-        return;
+        return true;
       }
     } catch {
       // ainda acordando -> tenta de novo
@@ -146,12 +216,13 @@ async function acordarServidor() {
     await new Promise((r) => setTimeout(r, 3000));
   }
 
-  clearTimeout(avisoLento);
+  terminar();
   el.statusServidor.className = 'status-servidor erro';
   el.statusServidor.textContent = 'O servidor não respondeu. ';
   const tentar = criar('button', 'botao pequeno', 'Tentar de novo');
-  tentar.addEventListener('click', acordarServidor);
+  tentar.addEventListener('click', iniciar);
   el.statusServidor.append(tentar);
+  return false;
 }
 
 // =====================================================
@@ -163,10 +234,28 @@ el.campoNome.value = ler('nome') ?? '';
 const codigoDoLink = normalizarCodigo(new URLSearchParams(location.search).get('sala'));
 if (codigoDoLink) el.campoCodigo.value = codigoDoLink;
 (el.campoNome.value ? el.campoCodigo : el.campoNome).focus();
-acordarServidor();
+
+async function iniciar() {
+  const pronto = await acordarServidor();
+  if (!pronto) return;
+
+  // ---------- Apertou F5 dentro de uma sala? Volta sozinho ----------
+  const sessao = lerSessao();
+  if (sessao?.bilhete && (!codigoDoLink || codigoDoLink === sessao.codigo)) {
+    el.statusServidor.textContent = `Voltando pra sala ${sessao.codigo}...`;
+    const voltou = await conectarNaSala((sinal) => sinal.pedir('voltar', { bilhete: sessao.bilhete, recarregou: true }));
+    if (!voltou) {
+      apagarSessao();
+      el.statusServidor.textContent = 'Servidor online';
+    }
+  }
+}
+iniciar();
 
 // ---------- Criar sala ----------
-el.botaoCriar.addEventListener('click', async () => {
+el.botaoCriar.addEventListener('click', criarSala);
+
+async function criarSala() {
   if (!validarNome()) return;
   setCarregando(true);
   mostrarErroInicio('');
@@ -179,11 +268,23 @@ el.botaoCriar.addEventListener('click', async () => {
     });
     const dados = await resposta.json();
     if (!resposta.ok) throw new Error(dados.erro || 'Erro ao criar a sala');
-    await entrarNaSala(dados.codigo, senha);
+    // A chave de dono só vai pra quem criou: entrando com ela, vira o dono
+    await conectarNaSala((sinal) =>
+      sinal.pedir('entrar', { codigo: dados.codigo, nome: el.campoNome.value.trim(), chaveDono: dados.chaveDono })
+    );
   } catch (erro) {
-    mostrarErroInicio(erro.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : erro.message);
+    mostrarErroInicio(traduzirErro(erro));
+  } finally {
     setCarregando(false);
   }
+}
+
+// ---------- Enter no campo do nome: entra (se tem código) ou cria a sala ----------
+el.campoNome.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || !estado.servidorPronto) return;
+  e.preventDefault();
+  if (normalizarCodigo(el.campoCodigo.value).length === 6) el.formEntrar.requestSubmit();
+  else criarSala();
 });
 
 // ---------- Entrar com código ----------
@@ -197,7 +298,7 @@ el.formEntrar.addEventListener('submit', async (e) => {
     return;
   }
 
-  // Campo de senha ainda escondido? Pergunta se a sala tem senha
+  // Campo de senha ainda escondido? Pergunta como está a sala antes
   if (el.campoSenhaEntrar.hidden) {
     setCarregando(true);
     try {
@@ -206,21 +307,23 @@ el.formEntrar.addEventListener('submit', async (e) => {
       if (!resposta.ok) throw new Error(info.erro || 'Erro ao procurar a sala');
       if (!info.existe) throw new Error('Sala não encontrada. Confira o código.');
       if (info.cheia) throw new Error('A sala está cheia.');
+      if (info.trancada) throw new Error('A sala está trancada pelo dono.');
       if (info.temSenha) {
         el.campoSenhaEntrar.hidden = false;
         el.campoSenhaEntrar.focus();
-        mostrarErroInicio('Esta sala tem senha. Digite e clique em Entrar.');
+        mostrarErroInicio('Esta sala tem senha. Digite e aperte Enter.');
         return;
       }
     } catch (erro) {
-      mostrarErroInicio(erro.message === 'Failed to fetch' ? 'Sem conexão com o servidor.' : erro.message);
+      mostrarErroInicio(traduzirErro(erro));
       return;
     } finally {
       setCarregando(false);
     }
   }
 
-  entrarNaSala(codigo, el.campoSenhaEntrar.value);
+  const senha = el.campoSenhaEntrar.value;
+  conectarNaSala((sinal) => sinal.pedir('entrar', { codigo, nome: el.campoNome.value.trim(), senha }));
 });
 
 el.campoCodigo.addEventListener('input', () => {
@@ -242,74 +345,101 @@ function validarNome() {
 }
 
 // =====================================================
-// ENTRAR NA SALA
+// CONECTAR NA SALA (entrar, criar ou voltar depois do F5)
+// "pedido" recebe a conexão e faz o pedido certo ao servidor
 // =====================================================
-async function entrarNaSala(codigo, senha = '') {
+async function conectarNaSala(pedido) {
   setCarregando(true);
   mostrarErroInicio('');
   const sinal = new Sinalizacao(URL_WS);
 
   try {
     await sinal.aberto;
-    const info = await sinal.pedir('entrar', { codigo, nome: el.campoNome.value.trim(), senha });
+    const info = await pedido(sinal);
     estado.sinal = sinal;
     registrarEventos(sinal);
     aplicarEstado(info);
-
-    // ---------- Monta a tela da sala ----------
-    el.telaInicio.hidden = true;
-    el.telaSala.hidden = false;
-    el.textoCodigo.textContent = info.codigo;
-    el.iconeSenha.hidden = !info.temSenha;
-    document.title = `Sala ${info.codigo} · Tela ao Vivo`;
-    history.replaceState(null, '', `${location.pathname}?sala=${info.codigo}`);
-    prepararControles();
-    for (const m of info.chat) adicionarMensagem(m);
-
-    // Mantém o servidor acordado enquanto a sala está aberta
-    estado.timerPing = setInterval(() => sinal.pedir('ping').catch(() => {}), 4 * 60_000);
+    montarSala(info);
+    return true;
   } catch (erro) {
     sinal.fechar();
     mostrarErroInicio(erro.message);
+    return false;
   } finally {
     setCarregando(false);
   }
 }
 
+function montarSala(info) {
+  el.telaInicio.hidden = true;
+  el.telaSala.hidden = false;
+  el.textoCodigo.textContent = info.codigo;
+  el.iconeSenha.hidden = !info.temSenha;
+  history.replaceState(null, '', `${location.pathname}?sala=${info.codigo}`);
+  atualizarTitulo();
+  prepararControles();
+  for (const m of info.chat) adicionarMensagem(m, false);
+  observarChat();
+
+  // Mantém o servidor acordado enquanto a sala está aberta
+  clearInterval(estado.timerPing);
+  estado.timerPing = setInterval(() => estado.sinal.pedir('ping').catch(() => {}), 4 * 60_000);
+}
+
 // -----------------------------------------------------
-// Aplica o estado que o servidor mandou (ao entrar ou reconectar)
+// Aplica o estado que o servidor mandou (ao entrar ou voltar)
 // -----------------------------------------------------
 function aplicarEstado(info) {
   estado.codigo = info.codigo;
   estado.meuId = info.meuId;
-  estado.token = info.token;
+  estado.bilhete = info.bilhete;
+  salvarSessao();
+  if (info.meuNome) el.campoNome.value = info.meuNome;
 
   if (!estado.malha) {
     estado.malha = new MalhaP2P(estado.sinal, info.meuId, info.iceServers);
     registrarEventosMalha(estado.malha);
   }
 
-  // Quem saiu enquanto eu estava desconectado
+  // ---------- Quem não está na lista ----------
   const presentes = new Set(info.participantes.map((p) => p.id));
-  for (const id of [...estado.pessoas.keys()]) if (!presentes.has(id)) removerPessoa(id);
+  for (const id of [...estado.pessoas.keys()]) {
+    if (presentes.has(id) || id === estado.meuId) continue;
+    if (info.recriada) {
+      // O servidor reiniciou e cada um está voltando aos poucos:
+      // espera 35s antes de considerar que a pessoa saiu (a conexão de vídeo continua)
+      if (!estado.voltando.has(id)) estado.voltando.set(id, setTimeout(() => removerPessoa(id), 35_000));
+    } else {
+      removerPessoa(id);
+    }
+  }
 
-  // Quem está na sala agora
+  // ---------- Quem está na sala agora ----------
   for (const p of info.participantes) {
     estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo });
     if (p.id === estado.meuId) continue;
     estado.malha.par(p.id); // conexão direta com essa pessoa
     p.transmitindo ? garantirTile(p.id) : removerTile(p.id);
   }
+
+  estado.donoId = info.donoId;
+  aplicarTrancada(info.trancada);
   renderizarPessoas();
 }
 
 // ---------- Avisos que o servidor manda ----------
 function registrarEventos(sinal) {
   sinal.on('participanteEntrou', (p) => {
+    const estavaVoltando = estado.voltando.has(p.id);
+    if (estavaVoltando) {
+      clearTimeout(estado.voltando.get(p.id));
+      estado.voltando.delete(p.id);
+    }
     estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo });
     estado.malha.par(p.id);
+    if (p.transmitindo) garantirTile(p.id);
     renderizarPessoas();
-    adicionarMensagemSistema(`${p.nome} entrou`);
+    if (!estavaVoltando) adicionarMensagemSistema(`${p.nome} entrou`);
   });
 
   sinal.on('participanteSaiu', ({ id }) => {
@@ -325,28 +455,85 @@ function registrarEventos(sinal) {
     renderizarPessoas();
   });
 
-  sinal.on('chat', adicionarMensagem);
+  sinal.on('chat', (m) => adicionarMensagem(m, true));
+  sinal.on('aviso', ({ texto }) => adicionarMensagemSistema(texto));
+
+  // ---------- Dono e sala trancada ----------
+  sinal.on('dono', ({ id }) => {
+    estado.donoId = id;
+    renderizarPessoas();
+    if (id === estado.meuId) mostrarAviso('Agora você é o dono da sala: pode trancar a sala e remover pessoas.');
+    else adicionarMensagemSistema(`${nomeDe(id)} agora é o dono da sala`);
+  });
+  sinal.on('sala', ({ trancada }) => {
+    aplicarTrancada(trancada);
+    adicionarMensagemSistema(trancada ? 'A sala foi trancada: ninguém novo entra' : 'A sala foi destrancada');
+  });
+  sinal.on('bilhete', ({ bilhete }) => {
+    estado.bilhete = bilhete;
+    salvarSessao();
+  });
+
+  // ---------- Removido pelo dono ----------
+  sinal.on('expulso', () => {
+    apagarSessao();
+    encerrarLocalmente('Você foi removido da sala pelo dono.');
+  });
 
   // ---------- Conexão com o SERVIDOR (o vídeo P2P continua funcionando) ----------
+  sinal.on('reiniciando', () => {
+    mostrarAviso('O servidor está sendo atualizado. Você volta pra sala sozinho em alguns segundos (as telas continuam).', true);
+  });
+
   sinal.on('desconectado', () => {
-    mostrarAviso('Conexão com o servidor caiu. Reconectando... (as telas continuam funcionando)', true);
+    if (el.aviso.hidden || !el.aviso.textContent.includes('atualizado')) {
+      mostrarAviso('Conexão com o servidor caiu. Reconectando... (as telas continuam funcionando)', true);
+    }
   });
 
   sinal.on('reconectado', async () => {
     try {
-      const info = await sinal.pedir('reconectar', { codigo: estado.codigo, id: estado.meuId, token: estado.token });
+      const info = await sinal.pedir('voltar', {
+        bilhete: estado.bilhete,
+        recarregou: false,
+        transmitindo: estado.malha?.transmitindo ?? false,
+      });
+      if (info.reentrou) {
+        // Voltou como alguém "novo": refaz as conexões de vídeo com todo mundo
+        estado.malha.fechar();
+        estado.malha.meuId = info.meuId;
+        for (const id of [...estado.telas.keys()]) removerTile(id);
+        estado.pessoas.clear();
+      }
       aplicarEstado(info);
-      mostrarAviso('Reconectado ao servidor!');
-    } catch {
-      mostrarAviso('Você ficou tempo demais desconectado e saiu da sala. Recarregue a página para entrar de novo.', true);
-      el.botaoTransmitir.disabled = true;
+      if (info.reentrou && estado.malha.transmitindo) {
+        await sinal.pedir('transmissao', { ativo: true }).catch(() => pararTransmissao());
+      }
+      mostrarAviso(info.recriada ? 'O servidor foi atualizado e a sala foi restaurada!' : 'Reconectado ao servidor!');
+    } catch (erro) {
+      apagarSessao();
+      encerrarLocalmente(`Não foi possível voltar pra sala (${erro.message}). Recarregue a página para entrar de novo.`);
     }
   });
 
-  sinal.on('encerrado', ({ motivo }) => {
-    mostrarAviso(`${motivo || 'Conexão encerrada'}. Recarregue a página para entrar de novo.`, true);
-    el.botaoTransmitir.disabled = true;
+  sinal.on('encerrado', ({ codigo, motivo }) => {
+    if (codigo === 4002) return; // já tratado em 'expulso'
+    apagarSessao();
+    encerrarLocalmente(`${motivo || 'Conexão encerrada'}. Recarregue a página para entrar de novo.`);
   });
+}
+
+// Fim da sala do meu lado: para tudo e deixa só o aviso
+function encerrarLocalmente(texto) {
+  if (estado.malha?.transmitindo) estado.malha.pararTransmissao();
+  estado.minhaTela?.tile.remove();
+  estado.minhaTela = null;
+  estado.malha?.fechar();
+  for (const id of [...estado.telas.keys()]) removerTile(id);
+  clearInterval(estado.timerPing);
+  el.botaoTransmitir.disabled = true;
+  el.formChat.querySelector('button').disabled = true;
+  mostrarAviso(texto, true);
 }
 
 // ---------- Avisos da malha P2P ----------
@@ -375,15 +562,21 @@ function registrarEventosMalha(malha) {
 
   malha.on('falhaConexao', ({ id }) => {
     mostrarAviso(
-      `Não deu pra conectar direto com ${nomeDe(id)}. A rede de um de vocês pode estar bloqueando conexões diretas (P2P).`,
+      `Não deu pra conectar com ${nomeDe(id)}. A rede de um de vocês está bloqueando a conexão direta ` +
+        '(comum em 4G e redes de faculdade/empresa). Tentar outra rede (ex: Wi-Fi de casa) costuma resolver.',
       true
     );
   });
 
-  malha.on('espectadores', atualizarInfoEspectadores);
+  malha.on('espectadores', (ids) => {
+    estado.espectadores = ids;
+    atualizarInfoEspectadores();
+  });
 }
 
 function removerPessoa(id) {
+  clearTimeout(estado.voltando.get(id));
+  estado.voltando.delete(id);
   estado.pessoas.delete(id);
   estado.streams.delete(id);
   estado.malha?.removerPar(id);
@@ -394,8 +587,12 @@ function removerPessoa(id) {
 // =====================================================
 // CONTROLES DE TRANSMISSÃO
 // =====================================================
+let controlesProntos = false;
 function prepararControles() {
-  // ---------- Codecs que este navegador consegue enviar ----------
+  if (controlesProntos) return;
+  controlesProntos = true;
+
+  // ---------- Codecs que este navegador consegue enviar (em "Avançado") ----------
   const nomes = { VP8: 'VP8 (compatível)', H264: 'H264 (pode usar a GPU)' };
   el.selectCodec.replaceChildren();
   for (const codec of codecsDisponiveis()) {
@@ -415,10 +612,11 @@ function prepararControles() {
   // ---------- Dá pra transmitir daqui? ----------
   if (!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia) {
     el.botaoTransmitir.disabled = true;
+    $('dica-transmitir').hidden = true;
     mostrarAviso(
       !window.isSecureContext
         ? 'Esta página não está em HTTPS: você pode assistir, mas não transmitir.'
-        : 'Este navegador não permite compartilhar a tela (use Chrome, Edge ou Firefox no computador). Você ainda pode assistir.',
+        : 'Este aparelho não permite compartilhar a tela (celulares não deixam). Você pode assistir normalmente.',
       true
     );
   }
@@ -481,8 +679,10 @@ async function pararTransmissao() {
   if (!estado.malha?.transmitindo) return;
   estado.mudandoTransmissao = true;
   estado.malha.pararTransmissao();
+  if (estado.destaque === estado.meuId) definirDestaque(null);
   estado.minhaTela?.tile.remove();
   estado.minhaTela = null;
+  estado.espectadores = [];
   atualizarBotaoTransmitir(false);
   await estado.sinal.pedir('transmissao', { ativo: false }).catch(() => {});
   estado.mudandoTransmissao = false;
@@ -502,19 +702,45 @@ function atualizarBotaoTransmitir(transmitindo) {
   atualizarVazio();
 }
 
-// Quantas pessoas estão vendo a MINHA tela
-function atualizarInfoEspectadores(quantidade) {
+// Quem está vendo a MINHA tela (com os nomes)
+function atualizarInfoEspectadores() {
+  if (!estado.malha?.transmitindo) return;
+  const nomes = estado.espectadores.map(nomeDe);
   const texto =
-    quantidade === 0
+    nomes.length === 0
       ? 'Ninguém assistindo: sem envio, sem gasto'
-      : `👁 ${quantidade} ${quantidade === 1 ? 'pessoa assistindo' : 'pessoas assistindo'}`;
+      : `👁 ${nomes.length} assistindo: ${nomes.join(', ')}`;
   el.infoEspectadores.textContent = texto;
   if (estado.minhaTela) estado.minhaTela.status.textContent = texto;
 }
 
 // =====================================================
-// TELAS DOS OUTROS
+// TELAS (cartões)
 // =====================================================
+
+// ---------- Tela em destaque (grande), as outras ficam menores ao lado ----------
+function definirDestaque(id) {
+  estado.destaque = estado.destaque === id ? null : id;
+  el.grade.classList.toggle('com-destaque', !!estado.destaque);
+  for (const [tid, tela] of estado.telas) atualizarBotaoDestaque(tela, tid === estado.destaque);
+  if (estado.minhaTela) atualizarBotaoDestaque(estado.minhaTela, estado.destaque === estado.meuId);
+}
+
+function atualizarBotaoDestaque(tela, emDestaque) {
+  tela.tile.classList.toggle('destaque', emDestaque);
+  tela.botaoDestaque.textContent = emDestaque ? '📌 Soltar' : '📌';
+  tela.botaoDestaque.title = emDestaque ? 'Voltar ao tamanho normal' : 'Deixar esta tela grande';
+  if (emDestaque) el.grade.prepend(tela.tile);
+}
+
+function criarBotaoDestaque(id) {
+  const botao = criar('button', 'botao pequeno', '📌');
+  botao.title = 'Deixar esta tela grande';
+  botao.addEventListener('click', () => definirDestaque(id));
+  return botao;
+}
+
+// ---------- Tela de outra pessoa ----------
 function garantirTile(id) {
   if (estado.telas.has(id)) return;
 
@@ -523,6 +749,7 @@ function garantirTile(id) {
   video.autoplay = true;
   video.playsInline = true;
   video.muted = estado.mudos.has(id);
+  video.volume = estado.volumes.get(id) ?? 1;
   const stream = estado.streams.get(id);
   if (stream) video.srcObject = stream;
 
@@ -533,30 +760,49 @@ function garantirTile(id) {
 
   // ---------- Barra com nome e botões ----------
   const barra = criar('div', 'tile-barra');
-  const nome = criar('span', null, nomeDe(id));
+  const nome = criar('span', 'nome-tile', nomeDe(id));
+  nome.style.setProperty('--cor', corDe(id));
   const acoes = criar('div', 'acoes');
 
+  // Som: botão liga/desliga + volume
   const botaoSom = criar('button', 'botao pequeno', video.muted ? '🔇' : '🔊');
-  botaoSom.title = 'Ligar/desligar o som desta transmissão';
-  botaoSom.addEventListener('click', () => {
-    const mudo = !estado.mudos.has(id);
-    mudo ? estado.mudos.add(id) : estado.mudos.delete(id);
+  botaoSom.title = 'Ligar/desligar o som desta tela';
+  const volume = criar('input', 'volume');
+  volume.type = 'range';
+  volume.min = '0';
+  volume.max = '1';
+  volume.step = '0.05';
+  volume.value = String(video.volume);
+  volume.title = 'Volume desta tela';
+  const aplicarSom = () => {
+    const mudo = estado.mudos.has(id);
     video.muted = mudo;
-    botaoSom.textContent = mudo ? '🔇' : '🔊';
+    botaoSom.textContent = mudo || video.volume === 0 ? '🔇' : '🔊';
+  };
+  botaoSom.addEventListener('click', () => {
+    estado.mudos.has(id) ? estado.mudos.delete(id) : estado.mudos.add(id);
+    aplicarSom();
+  });
+  volume.addEventListener('input', () => {
+    video.volume = Number(volume.value);
+    estado.volumes.set(id, video.volume);
+    if (video.volume > 0) estado.mudos.delete(id);
+    aplicarSom();
   });
 
   const botaoOcultar = criar('button', 'botao pequeno', 'Ocultar');
-  const tela = { tile, video, conectando, oculto: false };
+  const botaoDestaque = criarBotaoDestaque(id);
+  const tela = { tile, video, conectando, botaoDestaque, oculto: false };
 
   // Se o navegador bloquear vídeo com som automático, começa mudo (senão nem aparece)
   tela.tocar = () => {
     video.play().catch(() => {
-      video.muted = true;
       estado.mudos.add(id);
-      botaoSom.textContent = '🔇';
+      aplicarSom();
       video.play().catch(() => {});
     });
   };
+
   const alternarOculto = () => {
     tela.oculto = !tela.oculto;
     estado.malha.ocultar(id, tela.oculto); // quem transmite para de mandar o vídeo pra mim
@@ -575,7 +821,7 @@ function garantirTile(id) {
   // Some o "Conectando..." quando o primeiro quadro chega
   video.addEventListener('loadeddata', () => (conectando.hidden = true));
 
-  acoes.append(botaoSom, botaoOcultar, botaoCheia);
+  acoes.append(botaoSom, volume, botaoOcultar, botaoDestaque, botaoCheia);
   barra.append(nome, acoes);
   tile.append(video, conectando, pausado, barra);
   el.grade.append(tile);
@@ -589,6 +835,7 @@ function removerTile(id) {
   if (!tela) return;
   tela.tile.remove();
   estado.telas.delete(id);
+  if (estado.destaque === id) definirDestaque(null);
   atualizarVazio();
 }
 
@@ -602,11 +849,15 @@ function criarTileMeu(stream) {
   video.srcObject = new MediaStream(stream.getVideoTracks());
 
   const barra = criar('div', 'tile-barra');
+  const titulo = criar('strong', null, 'Sua tela (prévia)');
   const status = criar('span', 'info', '');
-  barra.append(criar('strong', null, 'Você (transmitindo)'), status);
+  const acoes = criar('div', 'acoes');
+  const botaoDestaque = criarBotaoDestaque(estado.meuId);
+  acoes.append(status, botaoDestaque);
+  barra.append(titulo, acoes);
   tile.append(video, barra);
   el.grade.prepend(tile);
-  return { tile, status };
+  return { tile, status, botaoDestaque };
 }
 
 function atualizarVazio() {
@@ -614,23 +865,52 @@ function atualizarVazio() {
 }
 
 // =====================================================
-// PESSOAS
+// PESSOAS (com cor, dono 👑 e botão de remover pro dono)
 // =====================================================
 function renderizarPessoas() {
+  const souDono = estado.donoId === estado.meuId;
+  el.botaoTrancar.hidden = !souDono;
   el.listaPessoas.replaceChildren();
+
   for (const [id, pessoa] of estado.pessoas) {
     const item = criar('li');
-    const esquerda = criar('span', null, pessoa.nome);
+    const esquerda = criar('span', 'nome-pessoa', pessoa.nome);
+    esquerda.style.setProperty('--cor', corDe(id));
+    if (id === estado.donoId) esquerda.append(criar('span', 'coroa', ' 👑'));
     if (id === estado.meuId) esquerda.append(criar('span', 'voce', ' (você)'));
+    if (estado.voltando.has(id)) esquerda.append(criar('span', 'voce', ' (voltando...)'));
     item.append(esquerda);
-    if (pessoa.transmitindo) item.append(criar('span', 'etiqueta', 'AO VIVO'));
+
+    const direita = criar('span', 'direita');
+    if (pessoa.transmitindo) direita.append(criar('span', 'etiqueta', 'AO VIVO'));
+    if (souDono && id !== estado.meuId) {
+      const remover = criar('button', 'botao mini', 'Remover');
+      remover.title = `Remover ${pessoa.nome} da sala`;
+      confirmarComSegundoClique(remover, 'Confirmar?', () => {
+        estado.sinal.pedir('expulsar', { id }).catch((erro) => mostrarAviso(erro.message));
+      });
+      direita.append(remover);
+    }
+    item.append(direita);
     el.listaPessoas.append(item);
   }
   el.contadorPessoas.textContent = estado.pessoas.size;
+  atualizarInfoEspectadores();
 }
 
+// ---------- Trancar sala (só o dono) ----------
+function aplicarTrancada(trancada) {
+  estado.trancada = !!trancada;
+  el.seloTrancada.hidden = !estado.trancada;
+  el.botaoTrancar.textContent = estado.trancada ? '🔓 Destrancar' : '🔒 Trancar sala';
+}
+
+el.botaoTrancar.addEventListener('click', () => {
+  estado.sinal.pedir('trancar', { trancada: !estado.trancada }).catch((erro) => mostrarAviso(erro.message));
+});
+
 // =====================================================
-// CHAT
+// CHAT (com contador de mensagens não lidas)
 // =====================================================
 el.formChat.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -645,11 +925,14 @@ el.formChat.addEventListener('submit', async (e) => {
   }
 });
 
-function adicionarMensagem(m) {
+function adicionarMensagem(m, nova) {
   const item = criar('li');
   const hora = new Date(m.hora).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  item.append(criar('span', 'autor', m.nome), document.createTextNode(m.texto), criar('span', 'hora', hora));
+  const autor = criar('span', 'autor', m.nome);
+  autor.style.color = corDe(m.participanteId);
+  item.append(autor, document.createTextNode(m.texto), criar('span', 'hora', hora));
   rolarChat(item);
+  if (nova && m.participanteId !== estado.meuId) contarNaoLida();
 }
 
 function adicionarMensagemSistema(texto) {
@@ -661,6 +944,40 @@ function rolarChat(item) {
   el.listaChat.append(item);
   if (estavaNoFim) el.listaChat.scrollTop = el.listaChat.scrollHeight;
 }
+
+// ---------- Não lidas: aba em segundo plano ou chat fora da tela ----------
+function contarNaoLida() {
+  if (!document.hidden && estado.chatVisivel) return;
+  estado.naoLidas++;
+  el.naoLidas.textContent = estado.naoLidas;
+  el.naoLidas.hidden = false;
+  atualizarTitulo();
+}
+
+function zerarNaoLidas() {
+  if (!estado.naoLidas) return;
+  estado.naoLidas = 0;
+  el.naoLidas.hidden = true;
+  atualizarTitulo();
+}
+
+function atualizarTitulo() {
+  const base = estado.codigo ? `Sala ${estado.codigo} · Tela ao Vivo` : 'Tela ao Vivo';
+  document.title = estado.naoLidas ? `(${estado.naoLidas}) ${base}` : base;
+}
+
+function observarChat() {
+  if (!('IntersectionObserver' in window)) return;
+  new IntersectionObserver(([entrada]) => {
+    estado.chatVisivel = entrada.isIntersecting;
+    if (estado.chatVisivel && !document.hidden) zerarNaoLidas();
+  }).observe(el.formChat);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && estado.chatVisivel) zerarNaoLidas();
+});
+el.campoChat.addEventListener('focus', zerarNaoLidas);
 
 // =====================================================
 // TOPO: copiar link e sair
@@ -676,8 +993,10 @@ el.botaoCopiar.addEventListener('click', async () => {
   }
 });
 
-el.botaoSair.addEventListener('click', async () => {
+// Sair pede um segundo clique (evita sair sem querer no meio da live)
+confirmarComSegundoClique(el.botaoSair, 'Clique de novo pra sair', async () => {
   esconderAviso();
+  apagarSessao();
   if (estado.malha?.transmitindo) await pararTransmissao();
   await estado.sinal?.pedir('sair').catch(() => {});
   clearInterval(estado.timerPing);
@@ -686,7 +1005,8 @@ el.botaoSair.addEventListener('click', async () => {
   location.href = location.pathname; // volta pro início (sem o ?sala=)
 });
 
-// Fechou a aba: avisa o servidor na hora (senão ele espera a reconexão)
+// Fechou a aba (ou F5): avisa o servidor na hora.
+// No F5, a sessão da aba continua e a pessoa volta sozinha com o bilhete.
 window.addEventListener('pagehide', () => {
   if (estado.sinal?.conectado) estado.sinal.ws.send(JSON.stringify({ id: 0, metodo: 'sair', dados: {} }));
 });

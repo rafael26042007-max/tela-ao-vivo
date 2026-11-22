@@ -9,16 +9,24 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 
 ## Funções
 
-- **Criar sala**: código de 6 caracteres (ex: `G7JFR7`) e link de convite (`?sala=G7JFR7`)
-- **Senha opcional** na sala (🔒), pedida só quando a sala tem
-- **Várias pessoas transmitindo** ao mesmo tempo
-- **Áudio** da aba/sistema (opcional)
-- **Qualidade**: Economia, Equilibrado ou Fluido
-- **Codec**: VP8 (funciona em todo navegador) ou H264 (pode usar a GPU)
-- **Ocultar** a tela de alguém: quem transmite **para de enviar** o vídeo pra você
-- **Tela cheia**, **som por tela**, **chat** com histórico e **lista de pessoas** com a marca "AO VIVO"
-- **Contador de espectadores** pra quem transmite
-- **Reconexão automática**: se a conexão com o servidor cair, o vídeo continua e você volta sozinho
+**Salas**
+- **Criar sala**: código de 6 caracteres (ex: `G7JFR7`) e link de convite (`?sala=G7JFR7`) com prévia bonita no Discord/WhatsApp
+- **Senha opcional** (🔑), pedida só quando a sala tem
+- **Dono da sala** (👑, quem criou): pode **trancar** a sala (ninguém novo entra) e **remover** pessoas. Se o dono sair, quem está há mais tempo vira dono
+- **Nomes repetidos** ganham número ("Ana", "Ana 2") e **cada pessoa tem uma cor**
+
+**Transmitir e assistir**
+- **Várias pessoas transmitindo** ao mesmo tempo; dá pra **transmitir e assistir com o mesmo usuário**
+- **Áudio** da aba/sistema (opcional) e **qualidade** (Economia, Equilibrado, Fluido); codec em "Avançado"
+- **📌 Tela em destaque**: uma tela grande e as outras numa coluna ao lado
+- **Volume por tela**, **tela cheia** e **Ocultar** (quem transmite para de enviar o vídeo pra você)
+- **Quem está assistindo**: quem transmite vê os nomes ("👁 2 assistindo: Ana, Beto")
+
+**Chat e conforto**
+- **Chat** com histórico e **contador de não lidas** (no título da aba também)
+- **Enter** no nome já entra/cria a sala; **Sair** pede confirmação
+- **F5 não tira ninguém da sala**: a pessoa volta sozinha, sem digitar nada
+- **Servidor atualizou/reiniciou?** As salas são **recriadas sozinhas** (mesmo código, senha e dono) e o vídeo nem para
 
 ## Como funciona
 
@@ -63,19 +71,36 @@ cada cópia fica mais leve, e o upload total fica parecido com o de 3 espectador
 | Lotar a sala | Máximo de pessoas e de transmissões por sala |
 | Spam no chat | 5 mensagens a cada 5 segundos |
 | HTML malicioso | Tudo é exibido como texto (`textContent`) |
+| Bilhete falsificado | O bilhete de volta é criptografado (AES-256-GCM) com a chave `SEGREDO`: não dá pra ler nem alterar |
+| Pessoa removida voltando | Quem o dono removeu não consegue voltar com o bilhete |
+
+## Como a sala sobrevive ao F5 e às atualizações
+
+Ao entrar, cada pessoa recebe um **bilhete**: um comprovante criptografado com o código da sala, o nome,
+se é dono e a senha (em hash). Só o servidor consegue ler ou criar bilhetes (chave `SEGREDO`, gerada pelo Render).
+
+- **F5:** o bilhete fica guardado na aba (`sessionStorage`) e a pessoa volta sozinha
+- **Internet caiu:** o navegador reconecta e mostra o bilhete; o vídeo P2P continua enquanto isso
+- **Servidor reiniciou** (atualização no Render): as salas somem da memória, mas o primeiro que voltar
+  **recria a sala** com o bilhete, e os outros entram nela. As conexões de vídeo continuam as mesmas.
+
+O Render também só reinicia o servidor quando `server/` ou `package.json` mudam (`buildFilter` no `render.yaml`).
 
 ## Estrutura
 
 ```
 server/                 # vai pro Render
 ├── index.js            # API de salas, WebSocket, CORS, /saude
-├── salas.js            # salas, códigos, senha, repasse dos sinais P2P, reconexão
+├── salas.js            # salas, códigos, dono, repasse dos sinais P2P, volta pra sala
+├── bilhete.js          # bilhete criptografado (F5 e recriar sala depois de reinício)
+├── turn.js             # servidores STUN/TURN (Cloudflare, Open Relay ou manual)
 ├── senha.js            # hash e conferência de senha
 ├── limites.js          # anti-abuso
 ├── certificado.js      # HTTPS autoassinado (só pra testar na rede local)
 └── config.js           # configurações
 web/                    # vai pro GitHub Pages (não precisa compilar)
 ├── index.html, style.css
+├── previa.png          # imagem da prévia do link (gerada por scripts/gerar-previa.py)
 ├── config.js           # endereço do servidor
 └── src/
     ├── app.js          # telas, botões, chat, pessoas
@@ -122,6 +147,13 @@ Modo desenvolvimento (reinicia o servidor ao salvar): `npm run dev`
 - Enquanto alguém está numa sala, o site manda um sinal a cada 4 min pra ele não dormir.
 - Quando ele dorme, as salas abertas somem (ficam só na memória).
 
-### Quando a conexão P2P falha
-Algumas redes (CGNAT pesado, rede de empresa/faculdade) bloqueiam conexão direta. O site avisa quando isso acontece.
-A solução é um servidor **TURN** (configure `TURN_URL`, `TURN_USUARIO` e `TURN_SENHA` no Render).
+### Quando a conexão P2P falha (TURN)
+Algumas redes (4G com CGNAT, rede de empresa/faculdade) bloqueiam conexão direta. O site avisa quando isso acontece.
+A solução é um servidor **TURN**, que retransmite o vídeo só pra quem não conseguiu conectar direto.
+Configure **uma** das opções no Render (**Environment**) e o servidor passa as credenciais pros navegadores sozinho:
+
+| Opção | Grátis por mês | Variáveis |
+|---|---|---|
+| **Cloudflare** (recomendado) | 1.000 GB | `CLOUDFLARE_TURN_ID` e `CLOUDFLARE_TURN_TOKEN` (painel da Cloudflare → Realtime → TURN Server) |
+| **Open Relay** (Metered) | 20 GB | `METERED_CHAVE` |
+| Qualquer outro TURN | — | `TURN_URL`, `TURN_USUARIO` e `TURN_SENHA` |

@@ -215,12 +215,80 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .mensagens .hora { color: var(--texto-fraco); font-size: 11px; margin-left: 4px; }
 .chat .linha input { padding: 8px 10px; }
 
+/* =====================================================
+   Melhorias da versão 2.1
+   ===================================================== */
+
+/* ---------- Tela inicial: selos e barra de progresso ---------- */
+.selos { list-style: none; margin: -6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.selos li {
+  font-size: 12px; color: var(--texto-fraco);
+  background: var(--painel); border: 1px solid var(--borda);
+  padding: 4px 10px; border-radius: 999px;
+}
+.bloco-servidor { display: flex; flex-direction: column; gap: 8px; }
+.bloco-servidor .status-servidor { margin: 0; }
+.progresso { height: 6px; background: var(--painel-2); border-radius: 999px; overflow: hidden; }
+.progresso > div { height: 100%; width: 0; background: #fcd34d; border-radius: 999px; transition: width .3s linear; }
+
+/* ---------- Topo da sala ---------- */
+.acoes-topo { display: flex; gap: 8px; align-items: center; }
+.selo-trancada {
+  font-size: 12px !important; color: #fcd34d !important;
+  border: 1px solid #5c4813; background: #3b2f12; padding: 2px 8px; border-radius: 999px;
+}
+.botao[data-confirmando] { background: var(--destaque); border-color: var(--destaque); color: #fff; }
+
+/* ---------- Controles: dica e "Avançado" ---------- */
+.dica { margin: 0; padding: 6px 16px; font-size: 12px; color: var(--texto-fraco); border-bottom: 1px solid var(--borda); }
+.avancado { color: var(--texto-fraco); font-size: 13px; }
+.avancado summary { cursor: pointer; user-select: none; }
+.avancado[open] {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--painel); border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px;
+}
+.avancado .info { margin: 0; max-width: 280px; font-size: 12px; }
+
+/* ---------- Tela em destaque (📌): uma grande, as outras numa coluna ao lado ---------- */
+.grade.com-destaque {
+  grid-template-columns: minmax(0, 1fr) 240px;
+  grid-auto-rows: minmax(150px, auto);
+  grid-auto-flow: dense;
+}
+.grade.com-destaque .tile.destaque { grid-column: 1; grid-row: span 3; min-height: calc(100vh - 230px); }
+.grade.com-destaque .tile:not(.destaque) { grid-column: 2; }
+.grade.com-destaque .tile:not(.destaque) .volume,
+.grade.com-destaque .tile:not(.destaque) .info { display: none; }
+.tile.destaque { border-color: #fcd34d; }
+
+/* ---------- Barra das telas: nome com a cor da pessoa, volume ---------- */
+.nome-tile, .nome-pessoa { display: inline-flex; align-items: center; gap: 6px; }
+.nome-tile::before, .nome-pessoa::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cor, var(--texto-fraco)); flex: none;
+}
+.tile-barra .acoes { align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.volume { width: 70px; accent-color: var(--destaque); padding: 0; }
+
+/* ---------- Pessoas: dono e botão de remover ---------- */
+.pessoas li { align-items: center; }
+.pessoas .direita { display: flex; align-items: center; gap: 6px; }
+.botao.mini { padding: 2px 8px; font-size: 11px; font-weight: 500; }
+
+/* ---------- Chat: contador de não lidas ---------- */
+.bloco h3 .nao-lidas {
+  background: var(--destaque); color: #fff !important; font-weight: 700 !important;
+  font-size: 11px; padding: 0 7px; border-radius: 999px; line-height: 18px;
+}
+
 /* ---------- Celular / tela pequena ---------- */
 @media (max-width: 800px) {
   .sala { height: auto; min-height: 100vh; }
   .conteudo { flex-direction: column; }
   .lateral { width: 100%; border-left: 0; border-top: 1px solid var(--borda); }
   .chat { min-height: 320px; }
-  .grade { grid-template-columns: 1fr; }
+  .grade, .grade.com-destaque { grid-template-columns: 1fr; }
+  .grade.com-destaque .tile.destaque { grid-row: auto; min-height: 50vh; }
+  .grade.com-destaque .tile:not(.destaque) { grid-column: auto; }
+  .topo { flex-wrap: wrap; }
   .topo .marca { display: none; }
 }
