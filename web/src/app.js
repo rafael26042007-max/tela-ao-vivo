@@ -610,15 +610,17 @@ function prepararControles() {
   el.selectQualidade.addEventListener('change', () => guardar('qualidade', el.selectQualidade.value));
 
   // ---------- Dá pra transmitir daqui? ----------
+  // Celular (Android/iPhone) não tem compartilhamento de tela no navegador.
+  // Em vez de mostrar controles que não funcionam, a sala entra no modo "só assistir":
+  // os controles somem e fica só uma nota pequena (pessoas e chat sobem na tela).
   if (!window.isSecureContext || !navigator.mediaDevices?.getDisplayMedia) {
     el.botaoTransmitir.disabled = true;
-    $('dica-transmitir').hidden = true;
-    mostrarAviso(
-      !window.isSecureContext
-        ? 'Esta página não está em HTTPS: você pode assistir, mas não transmitir.'
-        : 'Este aparelho não permite compartilhar a tela (celulares não deixam). Você pode assistir normalmente.',
-      true
-    );
+    el.telaSala.classList.add('so-assistir');
+    const nota = $('nota-so-assistir');
+    nota.textContent = !window.isSecureContext
+      ? '🔒 Esta página não está em HTTPS: dá pra assistir e conversar, mas não transmitir.'
+      : '📱 Neste aparelho dá pra assistir e conversar. Pra transmitir a sua tela, entre pelo computador.';
+    nota.hidden = false;
   }
 }
 

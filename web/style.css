@@ -280,6 +280,17 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
   font-size: 11px; padding: 0 7px; border-radius: 999px; line-height: 18px;
 }
 
+/* ---------- Modo "só assistir" (aparelhos que não transmitem, ex: celular) ---------- */
+.so-quem-assiste { display: none; }
+.sala.so-assistir .controles,
+.sala.so-assistir .dica,
+.sala.so-assistir .so-quem-transmite { display: none; }
+.sala.so-assistir .so-quem-assiste { display: block; }
+.nota-so-assistir {
+  margin: 0; padding: 8px 16px; font-size: 13px;
+  color: var(--texto-fraco); border-bottom: 1px solid var(--borda);
+}
+
 /* ---------- Celular / tela pequena ---------- */
 @media (max-width: 800px) {
   .sala { height: auto; min-height: 100vh; }
@@ -291,4 +302,8 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
   .grade.com-destaque .tile:not(.destaque) { grid-column: auto; }
   .topo { flex-wrap: wrap; }
   .topo .marca { display: none; }
+  .grade { padding: 12px; }
+  .vazio { padding: 28px 12px; }
+  /* Sem nada transmitindo, a grade fica baixinha e pessoas/chat aparecem logo */
+  .grade:has(> .vazio:not([hidden])) { flex: none; }
 }

@@ -105,7 +105,10 @@
       </div>
     </header>
 
-    <!-- ---------- Controles de transmissão ---------- -->
+    <!-- ---------- Só aparece em aparelhos que não transmitem (celular) ---------- -->
+    <p id="nota-so-assistir" class="nota-so-assistir" hidden></p>
+
+    <!-- ---------- Controles de transmissão (somem em quem só pode assistir) ---------- -->
     <section class="controles">
       <button id="botao-transmitir" class="botao principal">Transmitir minha tela</button>
       <label>
@@ -139,8 +142,9 @@
       <section id="grade-telas" class="grade">
         <div id="vazio" class="vazio">
           <p>Ninguém está transmitindo ainda.</p>
-          <p>Clique em <strong>Transmitir minha tela</strong> ou espere alguém começar.</p>
-          <p class="info">Dá pra transmitir e assistir ao mesmo tempo. Clique em 📌 numa tela pra deixar ela grande.</p>
+          <p class="so-quem-transmite">Clique em <strong>Transmitir minha tela</strong> ou espere alguém começar.</p>
+          <p class="so-quem-transmite info">Dá pra transmitir e assistir ao mesmo tempo. Clique em 📌 numa tela pra deixar ela grande.</p>
+          <p class="so-quem-assiste">Quando alguém começar a transmitir, a tela aparece aqui sozinha.</p>
         </div>
       </section>
 
