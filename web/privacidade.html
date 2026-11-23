@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacidade · Tela ao Vivo</title>
+  <meta name="description" content="O que o Tela ao Vivo guarda (quase nada), por quanto tempo e como apagar.">
+  <meta name="theme-color" content="#0f1115">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ef4444' fill-opacity='.25'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%23ef4444'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css?v=__VERSAO__">
+</head>
+<body>
+  <!-- =================================================
+       Política de privacidade (LGPD - Lei 13.709/2018)
+       Versão: 2026-11-23  (mudou o texto? mude a versão aqui E em versaoTermos no server/config.js)
+       ================================================= -->
+  <main class="pagina-texto">
+    <a class="voltar" href="./">← Voltar pro Tela ao Vivo</a>
+
+    <h1>Privacidade</h1>
+    <p class="info">Versão de 23/11/2026</p>
+
+    <p class="resumo">
+      <strong>Resumo:</strong> o vídeo e o áudio vão direto de um navegador pro outro e <strong>nunca passam pelo
+      nosso servidor nem são gravados</strong>. Sem conta, nada sobre você fica guardado depois que a sala fecha.
+      Com conta (opcional), guardamos só o mínimo, e você pode baixar ou apagar tudo quando quiser.
+    </p>
+
+    <h2>Quem cuida dos seus dados</h2>
+    <p>
+      O Tela ao Vivo é um projeto independente feito pelo Rafael (o "controlador", na linguagem da LGPD).
+      Pra qualquer pedido sobre os seus dados, use o botão <strong>💬 Enviar feedback</strong> do site ou abra
+      uma conversa no <a href="https://github.com/rafael26042007-max/tela-ao-vivo/issues">GitHub do projeto</a>.
+    </p>
+
+    <h2>O que acontece quando você usa sem conta</h2>
+    <table class="tabela-dados">
+      <thead><tr><th>Dado</th><th>Pra quê</th><th>Onde e por quanto tempo</th></tr></thead>
+      <tbody>
+        <tr><td>Vídeo da tela, câmera e áudio</td><td>Mostrar pra quem está na sala</td>
+          <td>Vai <strong>direto entre os navegadores</strong> (P2P), criptografado. Não passa pelo servidor, <strong>não é gravado</strong></td></tr>
+        <tr><td>Nome que você digita</td><td>Mostrar quem está na sala</td>
+          <td>Na memória do servidor enquanto a sala existe. Some quando a sala fecha. No seu navegador fica salvo pra próxima vez</td></tr>
+        <tr><td>Mensagens do chat</td><td>Entregar pras pessoas da sala</td>
+          <td>Na memória do servidor enquanto a sala existe. <strong>Não é gravado</strong> em disco nem em banco</td></tr>
+        <tr><td>Endereço IP</td><td>Segurança: limitar abuso (ex: criar salas demais, chutar senhas)</td>
+          <td>Nós guardamos só na memória, por no máximo 10 minutos, e não gravamos. A hospedagem do servidor (Render)
+            mantém os próprios registros de acesso por um período curto</td></tr>
+        <tr><td>Bilhete da sala</td><td>Voltar pra sala depois de apertar F5</td>
+          <td>Criptografado, só na aba do seu navegador. Some quando você fecha a aba</td></tr>
+        <tr><td>Feedback (nota, texto, nome se você quiser, tipo de aparelho e navegador)</td><td>Saber o que melhorar</td>
+          <td>Enviado pra um canal privado do Rafael no Discord. Só é enviado se você clicar em Enviar</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Se você criar uma conta (opcional)</h2>
+    <p>A conta é feita com o login do Discord. Pedimos ao Discord <strong>só o seu perfil básico</strong>, sem e-mail. Guardamos:</p>
+    <table class="tabela-dados">
+      <thead><tr><th>Dado</th><th>Pra quê</th></tr></thead>
+      <tbody>
+        <tr><td>Número do seu perfil do Discord</td><td>Saber que a conta é sua quando você entra</td></tr>
+        <tr><td>Nome</td><td>Mostrar nas salas e reservar o seu nome</td></tr>
+        <tr><td>Código da foto do Discord</td><td>Mostrar a sua foto (a imagem continua no Discord, não guardamos a foto)</td></tr>
+        <tr><td>Sala fixa e preferências (qualidade, codec)</td><td>Os benefícios da conta</td></tr>
+        <tr><td>Data em que você aceitou esta política, e qual versão</td><td>Comprovar o seu aceite</td></tr>
+        <tr><td>Data do último uso</td><td>Apagar contas abandonadas</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Nunca guardamos:</strong> e-mail, senha, IP, localização, histórico de salas, chat, vídeo ou áudio.</p>
+    <p>
+      <strong>Base legal:</strong> o seu consentimento ao criar a conta, e a execução do serviço que você pediu
+      (art. 7º, I e V da LGPD). Você pode retirar o consentimento a qualquer momento apagando a conta.
+    </p>
+    <p>
+      <strong>Por quanto tempo:</strong> enquanto você usar. Se a conta ficar <strong>12 meses sem uso</strong>,
+      ela é apagada sozinha. Se você apagar, some na hora, junto com tudo ligado a ela.
+    </p>
+
+    <h2>Onde os dados ficam</h2>
+    <ul>
+      <li><strong>Banco de dados das contas:</strong> Neon (PostgreSQL), na região de <strong>São Paulo, Brasil</strong>, com conexão criptografada.</li>
+      <li><strong>Servidor que organiza as salas:</strong> Render (Estados Unidos). Só guarda as salas na memória, nada em disco.</li>
+      <li><strong>Site:</strong> GitHub Pages. <strong>Login:</strong> Discord. <strong>Feedback:</strong> Discord.</li>
+    </ul>
+    <p>
+      Esses serviços processam os dados só pra fazer o site funcionar. O servidor das salas, o Discord e o GitHub
+      ficam fora do Brasil (transferência internacional, art. 33 da LGPD).
+    </p>
+
+    <h2>Os seus direitos</h2>
+    <p>Pela LGPD (art. 18), você pode, quando quiser:</p>
+    <ul>
+      <li><strong>Saber e ver</strong> o que temos sobre você, e <strong>baixar</strong> tudo (botão "Baixar meus dados" na conta)</li>
+      <li><strong>Corrigir</strong> o seu nome</li>
+      <li><strong>Apagar</strong> a conta e tudo ligado a ela (botão "Apagar minha conta")</li>
+      <li><strong>Retirar o consentimento</strong> (é o mesmo que apagar a conta)</li>
+      <li>Reclamar com a <a href="https://www.gov.br/anpd">ANPD</a>, a autoridade de proteção de dados do Brasil</li>
+    </ul>
+
+    <h2>Crianças e adolescentes</h2>
+    <p>
+      O login com Discord exige a idade mínima do próprio Discord. Se você é menor de idade, use o Tela ao Vivo com o
+      conhecimento dos seus pais ou responsáveis.
+    </p>
+
+    <h2>Segurança</h2>
+    <ul>
+      <li>Tudo usa conexão criptografada (HTTPS), e o vídeo P2P também é criptografado.</li>
+      <li>Senhas de sala são guardadas embaralhadas (hash), nunca como texto.</li>
+      <li>Só o servidor acessa o banco de dados, nunca o site direto.</li>
+      <li>Se acontecer algum vazamento que possa te prejudicar, avisamos você e a ANPD.</li>
+    </ul>
+
+    <h2>Mudanças nesta política</h2>
+    <p>Se ela mudar, a data lá em cima muda. Mudanças importantes pra quem tem conta são avisadas no site.</p>
+  </main>
+</body>
+</html>

@@ -138,10 +138,13 @@ server/                 # vai pro Render
 ├── senha.js            # hash e conferência de senha
 ├── limites.js          # anti-abuso
 ├── feedback.js         # confere o feedback e repassa pro webhook do Discord
+├── banco.js            # PostgreSQL (contas opcionais): conta, exportar, apagar, limpar inativas
+├── migracoes/          # estrutura do banco em SQL (aplicada sozinha ao iniciar)
 ├── certificado.js      # HTTPS autoassinado (só pra testar na rede local)
 └── config.js           # configurações
 web/                    # vai pro GitHub Pages (não precisa compilar)
 ├── index.html, style.css
+├── privacidade.html    # política de privacidade (LGPD)
 ├── previa.png          # imagem da prévia do link (gerada por scripts/gerar-previa.py)
 ├── config.js           # endereço do servidor
 └── src/
@@ -201,6 +204,22 @@ Modo desenvolvimento (reinicia o servidor ao salvar): `npm run dev`
 Sem a variável, o botão de feedback simplesmente não aparece. **Nunca coloque a URL no site** (ela funciona como
 a senha do canal): o site manda pro servidor, que confere, limita (3 a cada 10 min por IP, até 1000 caracteres)
 e repassa. Ninguém consegue usar `@everyone` pelo feedback.
+
+### Banco de dados → Neon (contas opcionais)
+O site funciona sem banco. Com ele, passam a existir as contas (login com Discord, ainda em construção).
+1. Em [neon.com](https://neon.com), crie um projeto **na região São Paulo (`aws-sa-east-1`)**: os dados ficam no Brasil
+2. Copie a **connection string** (`postgresql://...?sslmode=require`)
+3. No Render (**Environment**), adicione `DATABASE_URL` com ela. **Nunca coloque no site nem no GitHub**
+
+Ao iniciar, o servidor cria as tabelas sozinho (`server/migracoes/`). Se o banco cair, o site continua, só sem contas.
+
+**LGPD** (detalhes em `web/privacidade.html`):
+- Guarda só o mínimo: número do perfil do Discord, nome, código da foto, sala fixa, preferências e o aceite da política.
+  **Sem e-mail, senha, IP, token, chat, vídeo ou áudio**
+- Cada direito do titular tem uma função em `server/banco.js`: `meusDados` (acesso/portabilidade), `corrigirNome`,
+  `apagarConta` (apaga tudo em cascata)
+- Conta sem uso por 12 meses é apagada sozinha (`MESES_INATIVIDADE`)
+- Mudou o texto da política? Mude a versão no HTML **e** em `versaoTermos` (`server/config.js`)
 
 ### Quando a conexão P2P falha (TURN)
 Algumas redes (4G com CGNAT, rede de empresa/faculdade) bloqueiam conexão direta. O site avisa quando isso acontece.

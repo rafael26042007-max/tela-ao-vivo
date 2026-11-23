@@ -15,6 +15,7 @@ const { criarSala, infoSala, estatisticas, tratarConexao, avisarReinicio } = req
 const { temTurn } = require('./turn');
 const limites = require('./limites');
 const { feedbackLigado, validarFeedback, enviarFeedback } = require('./feedback');
+const { conectarBanco, bancoLigado, agendarLimpeza } = require('./banco');
 
 const PASTA_WEB = path.join(__dirname, '..', 'web');
 
@@ -157,7 +158,12 @@ async function tratarRequisicao(req, res) {
     // ---------- Saúde (o site usa pra "acordar" o servidor) ----------
     if (url.pathname === '/saude') {
       // feedback: o site só mostra o botão se o webhook estiver configurado
-      return responderJson(req, res, 200, { ok: true, ...estatisticas(), feedback: feedbackLigado() });
+      return responderJson(req, res, 200, {
+        ok: true,
+        ...estatisticas(),
+        feedback: feedbackLigado(),
+        contas: bancoLigado(), // o site só vai mostrar "Entrar com Discord" se o banco estiver ligado
+      });
     }
 
     if (url.pathname.startsWith('/api/') && !origemPermitida(req)) {
@@ -230,6 +236,13 @@ async function tratarRequisicao(req, res) {
 // Inicialização
 // =====================================================
 async function iniciar() {
+  // ---------- Banco (opcional). Se falhar, o site continua funcionando sem contas ----------
+  try {
+    if (await conectarBanco()) agendarLimpeza();
+  } catch (erro) {
+    console.error(`  Banco: não conectou (${erro.message}). Seguindo sem contas.`);
+  }
+
   const servidor = config.usarHttps
     ? https.createServer(await obterCertificado(config), tratarRequisicao)
     : http.createServer(tratarRequisicao);
@@ -279,6 +292,7 @@ async function iniciar() {
     if (config.usarHttps) console.log(`  Na sua rede:   ${protocolo}://${config.ipLocal}:${config.porta}`);
     if (config.origensPermitidas.length) console.log(`  Sites liberados: ${config.origensPermitidas.join(', ')}`);
     console.log(`  TURN:          ${temTurn() ? 'configurado' : 'não configurado (só STUN)'}`);
+    console.log(`  Banco:         ${bancoLigado() ? 'conectado' : 'desligado (sem DATABASE_URL: sem contas)'}`);
     if (!config.temSegredoFixo) {
       console.log('  Aviso: sem SEGREDO, as salas não são recriadas se o servidor reiniciar.');
     }

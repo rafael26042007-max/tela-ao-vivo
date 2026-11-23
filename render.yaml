@@ -34,6 +34,8 @@ services:
       # É ela que permite recriar as salas depois de uma atualização.
       - key: SEGREDO
         generateValue: true
+      # Banco (opcional): DATABASE_URL = connection string do Neon (região São Paulo).
+      # Configure no painel do Render, em Environment. Sem ele, o site funciona sem contas.
       # Feedback (opcional): webhook de um canal do Discord. Configure no painel
       # do Render, em Environment: FEEDBACK_WEBHOOK = https://discord.com/api/webhooks/...
       # Sem ele, o botão de feedback não aparece no site.

@@ -71,6 +71,15 @@ module.exports = {
   segredo: process.env.SEGREDO || require('crypto').randomBytes(32).toString('hex'),
   temSegredoFixo: !!process.env.SEGREDO,
 
+  // ---------- Banco de dados (contas opcionais) ----------
+  // Endereço do PostgreSQL (Neon, região São Paulo). Sem ele, o site funciona sem contas.
+  databaseUrl: process.env.DATABASE_URL || '',
+  // LGPD (retenção mínima): conta sem uso por este tempo é apagada sozinha
+  mesesInatividade: Number(process.env.MESES_INATIVIDADE || 12),
+  // Versão da política de privacidade (web/privacidade.html). Mudou o texto? Mude aqui também:
+  // fica guardada junto com o aceite de cada conta
+  versaoTermos: '2026-11-23',
+
   // ---------- Feedback ----------
   // Webhook de um canal do Discord. Sem ele, o botão de feedback não aparece no site.
   // Nunca coloque esse endereço no site: ele funciona como uma senha do canal.

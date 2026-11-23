@@ -14,7 +14,13 @@
     "type": "git",
     "url": "git+https://github.com/rafael26042007-max/tela-ao-vivo.git"
   },
-  "keywords": ["webrtc", "p2p", "compartilhar-tela", "screen-share", "websocket"],
+  "keywords": [
+    "webrtc",
+    "p2p",
+    "compartilhar-tela",
+    "screen-share",
+    "websocket"
+  ],
   "author": "Rafael",
   "license": "ISC",
   "bugs": {
@@ -22,6 +28,7 @@
   },
   "homepage": "https://rafael26042007-max.github.io/tela-ao-vivo/",
   "dependencies": {
+    "pg": "^8.23.1",
     "selfsigned": "^5.5.0",
     "ws": "^8.23.0"
   }

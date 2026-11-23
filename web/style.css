@@ -425,3 +425,17 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .tile.camera.minha { border-color: var(--borda); }
 .espelhado { transform: scaleX(-1); }
 .pessoas .icone-camera { font-size: 13px; }
+
+/* ---------- Página de texto (Privacidade) ---------- */
+.pagina-texto { max-width: 760px; margin: 0 auto; padding: 32px 20px 64px; line-height: 1.6; }
+.pagina-texto h1 { font-size: 28px; margin: 16px 0 0; }
+.pagina-texto h2 { font-size: 18px; margin: 32px 0 8px; }
+.pagina-texto a { color: #93c5fd; }
+.pagina-texto .voltar { font-size: 14px; color: var(--texto-fraco); text-decoration: none; }
+.pagina-texto .voltar:hover { color: var(--texto); }
+.pagina-texto .resumo { background: var(--painel); border: 1px solid var(--borda); border-radius: 8px; padding: 14px 16px; }
+.pagina-texto ul { padding-left: 20px; }
+.tabela-dados { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tabela-dados th, .tabela-dados td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--borda); }
+.tabela-dados th { color: var(--texto-fraco); font-weight: 600; }
+@media (max-width: 600px) { .tabela-dados { font-size: 13px; } .tabela-dados th, .tabela-dados td { padding: 6px; } }
