@@ -3,7 +3,8 @@
 // Fluxo: acordar servidor -> início (criar/entrar) -> sala
 // =====================================================
 import { Sinalizacao } from './conexao.js?v=__VERSAO__';
-import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, codecsDisponiveis } from './p2p.js?v=__VERSAO__';
+import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, CAMERA, codecsDisponiveis } from './p2p.js?v=__VERSAO__';
+import { prepararFeedback, mostrarBotoesFeedback } from './feedback.js?v=__VERSAO__';
 
 // =====================================================
 // Endereço do servidor (vem do config.js)
@@ -49,6 +50,7 @@ const el = {
   selectCodec: $('select-codec'),
   checkAudio: $('check-audio'),
   botaoTransmitir: $('botao-transmitir'),
+  botaoCamera: $('botao-camera'),
   infoEspectadores: $('info-espectadores'),
   aviso: $('aviso-sala'),
   grade: $('grade-telas'),
@@ -76,6 +78,10 @@ const estado = {
   pessoas: new Map(), // id -> { nome, transmitindo }
   telas: new Map(), // id -> { tile, video, ... } (telas dos outros)
   streams: new Map(), // id -> MediaStream recebido daquela pessoa
+  cameras: new Map(), // id -> { tile, video } (câmeras dos outros)
+  camerasRecebidas: new Map(), // id -> MediaStream da câmera daquela pessoa
+  idsCamera: new Map(), // id -> Set com ids de stream que já foram câmera (nunca viram "tela")
+  minhaCamera: null, // tile da minha câmera (prévia)
   mudos: new Set(), // ids com o som desligado por mim
   volumes: new Map(), // id -> volume (0 a 1)
   destaque: null, // id da tela em destaque (grande)
@@ -227,6 +233,9 @@ async function acordarServidor() {
     try {
       const resposta = await fetch(api('/saude'), { signal: AbortSignal.timeout(15_000), cache: 'no-store' });
       if (resposta.ok) {
+        // O servidor diz se o feedback está ligado (tem o webhook do Discord)
+        const saude = await resposta.json().catch(() => ({}));
+        mostrarBotoesFeedback(saude.feedback === true);
         terminar();
         estado.servidorPronto = true;
         el.statusServidor.className = 'status-servidor ok';
@@ -252,6 +261,13 @@ async function acordarServidor() {
 // =====================================================
 // TELA DE INÍCIO
 // =====================================================
+
+// ---------- Feedback (os botões só aparecem se o servidor tiver o webhook) ----------
+prepararFeedback({
+  api,
+  nomeAtual: () => el.campoNome.value.trim(),
+  onde: () => (el.telaSala.hidden ? 'inicio' : 'sala'),
+});
 
 // ---------- Preenche nome salvo e código do link (?sala=ABC123) ----------
 el.campoNome.value = ler('nome') ?? '';
@@ -518,7 +534,7 @@ function aplicarEstado(info) {
 
   // ---------- Quem está na sala agora ----------
   for (const p of info.participantes) {
-    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo, ausente: p.ausente });
+    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo, camera: p.camera, ausente: p.ausente });
     if (p.id === estado.meuId) continue;
     estado.malha.par(p.id); // conexão direta com essa pessoa
     p.transmitindo ? garantirTile(p.id) : removerTile(p.id);
@@ -544,7 +560,7 @@ function registrarEventos(sinal) {
       clearTimeout(saidaRecente);
       estado.saidasRecentes.delete(p.nome);
     }
-    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo, ausente: p.ausente });
+    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo, camera: p.camera, ausente: p.ausente });
     estado.malha.par(p.id);
     if (p.transmitindo) garantirTile(p.id);
     renderizarPessoas();
@@ -579,6 +595,22 @@ function registrarEventos(sinal) {
     const pessoa = estado.pessoas.get(participanteId);
     if (pessoa) pessoa.transmitindo = ativo;
     if (participanteId !== estado.meuId) ativo ? garantirTile(participanteId) : removerTile(participanteId);
+    renderizarPessoas();
+  });
+
+  // Câmera de alguém ligou/desligou (stream = id do vídeo da câmera)
+  sinal.on('camera', ({ participanteId, stream }) => {
+    const pessoa = estado.pessoas.get(participanteId);
+    if (pessoa) pessoa.camera = stream;
+    if (participanteId === estado.meuId) return void renderizarPessoas(); // 📷 ao lado do meu nome
+    if (stream) lembrarIdCamera(participanteId, stream);
+    // O vídeo chegou antes do aviso e foi parar como "tela"? Corrige
+    if (stream && estado.streams.get(participanteId)?.id === stream) {
+      estado.camerasRecebidas.set(participanteId, estado.streams.get(participanteId));
+      estado.streams.delete(participanteId);
+    }
+    if (!stream) removerCamera(participanteId);
+    else if (estado.camerasRecebidas.get(participanteId)?.id === stream) garantirCamera(participanteId);
     renderizarPessoas();
   });
 
@@ -627,11 +659,17 @@ function registrarEventos(sinal) {
         estado.malha.fechar();
         estado.malha.meuId = info.meuId;
         for (const id of [...estado.telas.keys()]) removerTile(id);
+        for (const id of [...estado.cameras.keys()]) removerCamera(id);
         estado.pessoas.clear();
       }
       aplicarEstado(info);
       if (info.reentrou && estado.malha.transmitindo) {
         await sinal.pedir('transmissao', { ativo: true }).catch(() => pararTransmissao());
+      }
+      // A câmera continua ligada: avisa de novo (se o servidor reiniciou, ele não sabe mais).
+      // Repetir o aviso não faz mal: o servidor ignora se nada mudou.
+      if (estado.malha.cameraLigada) {
+        await sinal.pedir('camera', { ativo: true, stream: estado.malha.camera.id }).catch(() => desligarCamera());
       }
       mostrarAviso(info.recriada ? 'O servidor foi atualizado e a sala foi restaurada!' : 'Reconectado ao servidor!');
     } catch (erro) {
@@ -653,6 +691,7 @@ function voltarAoInicio(texto) {
   apagarSessao();
   try { sessionStorage.setItem(CHAVE_AVISO, texto); } catch { /* ok */ }
   if (estado.malha?.transmitindo) estado.malha.pararTransmissao();
+  estado.malha?.desligarCamera();
   estado.malha?.fechar();
   estado.sinal?.fechar();
   location.href = location.pathname; // tela inicial, sem o ?sala=
@@ -661,6 +700,14 @@ function voltarAoInicio(texto) {
 // ---------- Avisos da malha P2P ----------
 function registrarEventosMalha(malha) {
   malha.on('midiaRemota', ({ id, stream }) => {
+    // É a câmera dessa pessoa? (o servidor avisa o id do stream da câmera)
+    const camera = estado.pessoas.get(id)?.camera;
+    if (camera) lembrarIdCamera(id, camera);
+    if (estado.idsCamera.get(id)?.has(stream.id)) {
+      estado.camerasRecebidas.set(id, stream);
+      if (camera === stream.id) garantirCamera(id); // só mostra se ainda está ligada
+      return;
+    }
     estado.streams.set(id, stream);
     const tela = estado.telas.get(id);
     if (tela && tela.video.srcObject !== stream) {
@@ -749,6 +796,9 @@ function removerPessoa(id) {
   estado.voltando.delete(id);
   estado.pessoas.delete(id);
   estado.streams.delete(id);
+  estado.camerasRecebidas.delete(id);
+  estado.idsCamera.delete(id);
+  removerCamera(id);
   estado.malha?.removerPar(id);
   removerTile(id);
   renderizarPessoas();
@@ -798,9 +848,130 @@ function prepararControles() {
     const nota = $('nota-so-assistir');
     nota.textContent = !window.isSecureContext
       ? '🔒 Esta página não está em HTTPS: dá pra assistir e conversar, mas não transmitir.'
-      : '📱 Neste aparelho dá pra assistir e conversar. Pra transmitir a sua tela, entre pelo computador.';
+      : '📱 Neste aparelho dá pra assistir, conversar e ligar a câmera. Pra transmitir a tela, entre pelo computador.';
     nota.hidden = false;
   }
+}
+
+// =====================================================
+// CÂMERA (pra todo mundo, inclusive no celular)
+// Separada da tela: dá pra transmitir a tela e a câmera ao mesmo tempo.
+// =====================================================
+if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) el.botaoCamera.hidden = true;
+
+el.botaoCamera.addEventListener('click', () => {
+  if (estado.mudandoCamera) return;
+  estado.malha.cameraLigada ? desligarCamera() : ligarCamera();
+});
+
+async function ligarCamera() {
+  estado.mudandoCamera = true;
+  el.botaoCamera.disabled = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: CAMERA.largura },
+        height: { ideal: CAMERA.altura },
+        frameRate: { max: CAMERA.fps },
+        facingMode: 'user', // no celular, a câmera da frente
+      },
+      audio: false, // a voz fica com o Discord/chamada de vocês
+    });
+  } catch (erro) {
+    const textos = {
+      NotAllowedError: 'Você não deu permissão pra câmera. Libere no cadeado ao lado do endereço do site.',
+      NotFoundError: 'Nenhuma câmera encontrada neste aparelho.',
+      NotReadableError: 'A câmera está sendo usada por outro programa (Discord, Zoom...). Feche ele e tente de novo.',
+    };
+    mostrarAviso(textos[erro.name] ?? `Não foi possível ligar a câmera: ${erro.message}`);
+    el.botaoCamera.disabled = false;
+    estado.mudandoCamera = false;
+    return;
+  }
+
+  try {
+    // Avisa a sala qual stream é a câmera ANTES de mandar o vídeo
+    // (o id é sempre o mesmo: ver streamCamera no p2p.js)
+    const trilha = stream.getVideoTracks()[0];
+    await estado.sinal.pedir('camera', { ativo: true, stream: estado.malha.streamCamera.id });
+    estado.malha.ligarCamera(trilha);
+    trilha.addEventListener('ended', () => desligarCamera()); // câmera desconectada
+    estado.minhaCamera = criarTileCamera(estado.meuId, stream, true);
+    el.botaoCamera.textContent = '📷 Desligar câmera';
+    el.botaoCamera.classList.add('perigo');
+    atualizarVazio();
+  } catch (erro) {
+    stream.getTracks().forEach((t) => t.stop());
+    mostrarAviso(`Não foi possível ligar a câmera: ${erro.message}`);
+  } finally {
+    el.botaoCamera.disabled = false;
+    estado.mudandoCamera = false;
+  }
+}
+
+async function desligarCamera() {
+  if (!estado.malha?.cameraLigada) return;
+  estado.malha.desligarCamera();
+  estado.minhaCamera?.tile.remove();
+  estado.minhaCamera = null;
+  el.botaoCamera.textContent = '📷 Ligar câmera';
+  el.botaoCamera.classList.remove('perigo');
+  atualizarVazio();
+  await estado.sinal.pedir('camera', { ativo: false }).catch(() => {});
+}
+
+// Tile de câmera: mais simples que o da tela (sem qualidade, volume nem ocultar)
+function criarTileCamera(id, stream, minha = false) {
+  const tile = criar('div', minha ? 'tile camera minha' : 'tile camera');
+  const video = criar('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = true; // câmera não tem som
+  video.srcObject = stream;
+  // A minha prévia fica espelhada, como num espelho (é o que todo app de câmera faz)
+  if (minha) video.classList.add('espelhado');
+
+  const barra = criar('div', 'tile-barra');
+  const nome = criar('span', 'nome-tile', minha ? '📷 Sua câmera (prévia)' : `📷 ${nomeDe(id)}`);
+  nome.style.setProperty('--cor', corDe(id));
+  const botaoCheia = criar('button', 'botao pequeno', '⛶');
+  botaoCheia.title = 'Tela cheia';
+  botaoCheia.addEventListener('click', () =>
+    document.fullscreenElement ? document.exitFullscreen().catch(() => {}) : tile.requestFullscreen?.().catch(() => {})
+  );
+  const acoes = criar('div', 'acoes');
+  acoes.append(botaoCheia);
+  barra.append(nome, acoes);
+  tile.append(video, barra);
+  el.grade.append(tile);
+  video.play().catch(() => {});
+  return { tile, video };
+}
+
+function lembrarIdCamera(id, streamId) {
+  if (!estado.idsCamera.has(id)) estado.idsCamera.set(id, new Set());
+  estado.idsCamera.get(id).add(streamId);
+}
+
+function garantirCamera(id) {
+  const stream = estado.camerasRecebidas.get(id);
+  if (!stream) return;
+  const existente = estado.cameras.get(id);
+  if (existente) {
+    if (existente.video.srcObject !== stream) existente.video.srcObject = stream;
+    return;
+  }
+  estado.cameras.set(id, criarTileCamera(id, stream));
+  atualizarVazio();
+}
+
+function removerCamera(id) {
+  const camera = estado.cameras.get(id);
+  if (!camera) return;
+  camera.tile.remove();
+  estado.cameras.delete(id);
+  atualizarVazio();
 }
 
 el.botaoTransmitir.addEventListener('click', () => {
@@ -1069,8 +1240,16 @@ function garantirTile(id) {
 
   const botaoCheia = criar('button', 'botao pequeno', '⛶');
   botaoCheia.title = 'Tela cheia';
-  botaoCheia.addEventListener('click', () => video.requestFullscreen?.());
-  video.addEventListener('dblclick', () => video.requestFullscreen?.());
+  // Tela cheia no TILE (não no <video>): no <video> o Chrome mostra os controles
+  // nativos (⏸ e um tempo que não faz sentido ao vivo). No tile, a nossa barra
+  // (volume, ocultar) continua lá. iPhone não deixa div em tela cheia: usa o vídeo.
+  const alternarTelaCheia = () => {
+    if (document.fullscreenElement) return void document.exitFullscreen().catch(() => {});
+    if (tile.requestFullscreen) tile.requestFullscreen().catch(() => video.webkitEnterFullscreen?.());
+    else video.webkitEnterFullscreen?.();
+  };
+  botaoCheia.addEventListener('click', alternarTelaCheia);
+  video.addEventListener('dblclick', alternarTelaCheia);
 
   // Some o "Conectando..." quando o primeiro quadro chega
   video.addEventListener('loadeddata', () => (conectando.hidden = true));
@@ -1138,6 +1317,7 @@ function renderizarPessoas() {
     item.append(esquerda);
 
     const direita = criar('span', 'direita');
+    if (pessoa.camera) direita.append(criar('span', 'icone-camera', '📷'));
     if (pessoa.transmitindo) direita.append(criar('span', 'etiqueta', 'AO VIVO'));
     if (souDono && id !== estado.meuId) {
       const remover = criar('button', 'botao mini', 'Remover');

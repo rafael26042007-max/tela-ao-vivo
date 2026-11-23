@@ -41,4 +41,6 @@ module.exports = {
   criacaoDeSalas: new Limitador({ maximo: 10, janelaMs: 60_000 }),
   // Senha errada numa sala (contando todo mundo): 20 a cada 10 minutos por sala
   senhaPorSala: new Limitador({ maximo: 20, janelaMs: 10 * 60_000 }),
+  // Feedback: 3 a cada 10 minutos por IP (evita encher o seu canal do Discord)
+  feedback: new Limitador({ maximo: 3, janelaMs: 10 * 60_000 }),
 };

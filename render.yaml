@@ -34,6 +34,9 @@ services:
       # É ela que permite recriar as salas depois de uma atualização.
       - key: SEGREDO
         generateValue: true
+      # Feedback (opcional): webhook de um canal do Discord. Configure no painel
+      # do Render, em Environment: FEEDBACK_WEBHOOK = https://discord.com/api/webhooks/...
+      # Sem ele, o botão de feedback não aparece no site.
       # TURN (opcional): configure no painel do Render, em Environment
       #   CLOUDFLARE_TURN_ID e CLOUDFLARE_TURN_TOKEN  (1.000 GB grátis/mês)
       #   ou METERED_CHAVE                            (20 GB grátis/mês)

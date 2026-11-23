@@ -26,12 +26,16 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 - **📌 Tela em destaque**: uma tela grande e as outras numa coluna ao lado
 - **Volume por tela**, **tela cheia** e **Ocultar** (quem transmite para de enviar o vídeo pra você)
 - **Quem está assistindo**: quem transmite vê os nomes ("👁 2 assistindo: Ana, Beto")
+- **📷 Câmera** pra todo mundo, **inclusive no celular** (que não consegue transmitir a tela). Separada da tela:
+  dá pra transmitir as duas ao mesmo tempo. Leve de propósito (360p, 15 fps, ~500 kbps por pessoa), sem som
+  (a voz fica com a chamada de vocês)
 
 **Chat e conforto**
 - **Chat** com histórico e **contador de não lidas** (no título da aba também)
 - **Enter** no nome já entra/cria a sala; **Sair** pede confirmação
 - **F5 não tira ninguém da sala**: a pessoa volta sozinha, sem digitar nada
 - **Servidor atualizou/reiniciou?** As salas são **recriadas sozinhas** (mesmo código, senha e dono) e o vídeo nem para
+- **💬 Feedback**: botão na tela inicial e na sala; a opinião chega num canal do Discord (ver "Feedback" em Publicando)
 
 ## Como funciona
 
@@ -133,6 +137,7 @@ server/                 # vai pro Render
 ├── turn.js             # servidores STUN/TURN (Cloudflare, Open Relay ou manual)
 ├── senha.js            # hash e conferência de senha
 ├── limites.js          # anti-abuso
+├── feedback.js         # confere o feedback e repassa pro webhook do Discord
 ├── certificado.js      # HTTPS autoassinado (só pra testar na rede local)
 └── config.js           # configurações
 web/                    # vai pro GitHub Pages (não precisa compilar)
@@ -143,6 +148,7 @@ web/                    # vai pro GitHub Pages (não precisa compilar)
     ├── app.js          # telas, botões, chat, pessoas
     ├── p2p.js          # malha WebRTC (perfect negotiation), qualidades e medição do envio
     ├── automatico.js   # decide quando a qualidade Automática sobe ou desce
+    ├── feedback.js     # janela "O que você achou?" 
     └── conexao.js      # WebSocket com reconexão automática
 render.yaml             # configuração do Render
 .github/workflows/pages.yml  # publica web/ no GitHub Pages
@@ -186,6 +192,15 @@ Modo desenvolvimento (reinicia o servidor ao salvar): `npm run dev`
 - Ele **dorme depois de 15 min sem uso** e leva **até ~1 min pra acordar**. O site mostra "Acordando o servidor..." enquanto isso.
 - Enquanto alguém está numa sala, o site manda um sinal a cada 4 min pra ele não dormir.
 - Quando ele dorme, as salas abertas somem (ficam só na memória).
+
+### Feedback → Discord
+1. No Discord, crie um canal (de preferência **privado, só seu**) e deixe a notificação em "Todas as mensagens"
+2. Configurações do canal → **Integrações → Webhooks → Novo webhook → Copiar URL do webhook**
+3. No Render (**Environment**), adicione `FEEDBACK_WEBHOOK` com essa URL
+
+Sem a variável, o botão de feedback simplesmente não aparece. **Nunca coloque a URL no site** (ela funciona como
+a senha do canal): o site manda pro servidor, que confere, limita (3 a cada 10 min por IP, até 1000 caracteres)
+e repassa. Ninguém consegue usar `@everyone` pelo feedback.
 
 ### Quando a conexão P2P falha (TURN)
 Algumas redes (4G com CGNAT, rede de empresa/faculdade) bloqueiam conexão direta. O site avisa quando isso acontece.

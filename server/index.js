@@ -14,6 +14,7 @@ const { obterCertificado } = require('./certificado');
 const { criarSala, infoSala, estatisticas, tratarConexao, avisarReinicio } = require('./salas');
 const { temTurn } = require('./turn');
 const limites = require('./limites');
+const { feedbackLigado, validarFeedback, enviarFeedback } = require('./feedback');
 
 const PASTA_WEB = path.join(__dirname, '..', 'web');
 
@@ -82,14 +83,14 @@ function responderJson(req, res, status, dados) {
   res.end(JSON.stringify(dados));
 }
 
-// Lê o corpo JSON da requisição (no máximo 1 KB)
-function lerJson(req) {
+// Lê o corpo JSON da requisição (no máximo 1 KB; o feedback usa 4 KB)
+function lerJson(req, maximo = 1024) {
   return new Promise((resolve, reject) => {
     let corpo = '';
     req.setEncoding('utf8');
     const aoReceber = (parte) => {
       corpo += parte;
-      if (corpo.length > 1024) {
+      if (corpo.length > maximo) {
         // Para de guardar, descarta o resto e deixa a rota responder o erro
         req.off('data', aoReceber);
         req.resume();
@@ -140,6 +141,7 @@ function servirArquivo(res, urlPath) {
 //   GET  /saude              -> o servidor está acordado?
 //   POST /api/salas          -> cria sala (senha opcional), devolve { codigo }
 //   GET  /api/salas/:codigo  -> a sala existe? tem senha?
+//   POST /api/feedback       -> manda a opinião de alguém pro Discord
 //   GET  /qualquer-coisa     -> arquivos do site
 // =====================================================
 async function tratarRequisicao(req, res) {
@@ -154,7 +156,8 @@ async function tratarRequisicao(req, res) {
 
     // ---------- Saúde (o site usa pra "acordar" o servidor) ----------
     if (url.pathname === '/saude') {
-      return responderJson(req, res, 200, { ok: true, ...estatisticas() });
+      // feedback: o site só mostra o botão se o webhook estiver configurado
+      return responderJson(req, res, 200, { ok: true, ...estatisticas(), feedback: feedbackLigado() });
     }
 
     if (url.pathname.startsWith('/api/') && !origemPermitida(req)) {
@@ -177,6 +180,31 @@ async function tratarRequisicao(req, res) {
       // chaveDono: só quem criou recebe; quem entra com ela vira o dono da sala
       const { codigo, chaveDono } = await criarSala({ senha: corpo.senha, limite: corpo.limite });
       return responderJson(req, res, 201, { codigo, chaveDono });
+    }
+
+    // ---------- Feedback ----------
+    if (url.pathname === '/api/feedback' && req.method === 'POST') {
+      if (!feedbackLigado()) return responderJson(req, res, 503, { erro: 'Feedback desligado.' });
+      const ip = ipDe(req);
+      if (!limites.feedback.pode(ip)) {
+        return responderJson(req, res, 429, { erro: 'Você já mandou vários feedbacks. Obrigado! Tente de novo daqui a pouco.' });
+      }
+      let corpo;
+      try {
+        corpo = await lerJson(req, 4096);
+      } catch (erro) {
+        return responderJson(req, res, 400, { erro: erro.message });
+      }
+      const { erro, dados } = validarFeedback(corpo);
+      if (erro) return responderJson(req, res, 400, { erro });
+      limites.feedback.registrar(ip);
+      try {
+        await enviarFeedback(dados, req.headers['user-agent']);
+      } catch (falha) {
+        console.error('Feedback não enviado:', falha.message);
+        return responderJson(req, res, 502, { erro: 'Não deu pra enviar agora. Tente de novo mais tarde.' });
+      }
+      return responderJson(req, res, 201, { ok: true });
     }
 
     // ---------- Consultar sala ----------

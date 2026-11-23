@@ -175,13 +175,15 @@ class Participante {
     this.sala = sala;
     this.nome = nome;
     this.transmitindo = false;
+    // Câmera ligada: id do stream da câmera (quem recebe usa pra saber qual vídeo é a câmera)
+    this.camera = null;
     this.timerSaida = null;
     this.ultimasMensagens = []; // pra limitar spam no chat
   }
 
   resumo() {
     // ausente = a conexão caiu e a pessoa ainda pode voltar (ex: celular com a tela apagada)
-    return { id: this.id, nome: this.nome, transmitindo: this.transmitindo, ausente: !this.ws };
+    return { id: this.id, nome: this.nome, transmitindo: this.transmitindo, camera: this.camera, ausente: !this.ws };
   }
 }
 
@@ -393,6 +395,17 @@ function tratarConexao(ws) {
       const destino = sala().participantes.get(String(para));
       if (!destino || destino === participante) throw new Error('Participante não encontrado');
       enviar(destino.ws, 'sinal', { de: participante.id, dados });
+    },
+
+    // Câmera ligou/desligou. Não conta no limite de telas: é leve (360p, 15 fps).
+    // stream = id do MediaStream da câmera, pra quem recebe separar câmera de tela
+    async camera({ ativo, stream }) {
+      const s = sala();
+      const novo = ativo ? String(stream ?? '') : null;
+      if (novo !== null && !/^[\w{}-]{1,64}$/.test(novo)) throw new Error('Câmera inválida');
+      if (participante.camera === novo) return;
+      participante.camera = novo;
+      s.enviarParaTodos('camera', { participanteId: participante.id, stream: novo });
     },
 
     // Avisa a sala que começou/parou de transmitir (respeitando o limite)

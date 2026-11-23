@@ -12,6 +12,9 @@ import { decidirNivel, amostraRuim, NIVEL_INICIAL, ESCADA } from './automatico.j
 // Lembre: em P2P você envia UMA cópia pra cada pessoa que assiste
 // -----------------------------------------------------
 // movimento: true = prioriza fluidez (jogo/vídeo); senão prioriza nitidez (texto)
+// Câmera: leve de propósito (ela é o "rosto", a tela é o conteúdo)
+export const CAMERA = { largura: 640, altura: 360, fps: 15, bitrate: 500_000 };
+
 export const QUALIDADES = {
   minima: { nome: 'Mínima', largura: 854, altura: 480, fps: 10, bitrate: 300_000 },
   economia: { nome: 'Economia', largura: 1280, altura: 720, fps: 10, bitrate: 600_000 },
@@ -148,8 +151,9 @@ export class MalhaP2P {
       }
     };
 
-    // Se eu já estou transmitindo, essa pessoa nova também recebe
+    // Se eu já estou transmitindo (tela e/ou câmera), essa pessoa nova também recebe
     if (this.transmissao) this.adicionarTransmissao(par);
+    if (this.camera) this.adicionarCamera(par);
     this.atualizarEspectadores();
     return par;
   }
@@ -339,6 +343,63 @@ export class MalhaP2P {
 
   get transmitindo() {
     return !!this.transmissao;
+  }
+
+  // =====================================================
+  // CÂMERA (separada da tela: canal próprio em cada conexão)
+  // Qualidade fixa e leve, sem a Automática: 360p, 15 fps, 500 kbps por pessoa.
+  // Funciona no celular (que não consegue transmitir a tela).
+  // =====================================================
+  // O stream da câmera é SEMPRE o mesmo objeto (só a trilha dentro dele muda).
+  // Motivo: quem recebe identifica a câmera pelo id do stream, e o Chrome de quem recebe
+  // às vezes repete o evento com o stream ANTIGO ao religar. Com o id fixo, não confunde.
+  get streamCamera() {
+    this._streamCamera ??= new MediaStream();
+    return this._streamCamera;
+  }
+
+  ligarCamera(trilha) {
+    const stream = this.streamCamera;
+    stream.getTracks().forEach((t) => stream.removeTrack(t));
+    stream.addTrack(trilha);
+    this.camera = stream;
+    for (const par of this.pares.values()) this.adicionarCamera(par);
+  }
+
+  adicionarCamera(par) {
+    const track = this.camera?.getVideoTracks()[0];
+    if (!track) return;
+    const existente = par.transceptorCamera;
+    if (existente) {
+      // Reaproveita o canal da vez anterior (não cria um novo a cada liga/desliga)
+      existente.direction = 'sendonly';
+      existente.sender.replaceTrack(track).catch(() => {});
+      return;
+    }
+    par.transceptorCamera = par.pc.addTransceiver(track, {
+      direction: 'sendonly',
+      streams: [this.camera], // quem recebe usa o id desse stream pra saber que é a câmera
+      sendEncodings: [{ maxBitrate: CAMERA.bitrate, maxFramerate: CAMERA.fps }],
+    });
+  }
+
+  desligarCamera() {
+    if (!this.camera) return;
+    for (const par of this.pares.values()) {
+      const t = par.transceptorCamera;
+      if (!t) continue;
+      t.sender.replaceTrack(null).catch(() => {});
+      if (par.pc.signalingState !== 'closed') t.direction = 'inactive';
+    }
+    this.camera.getTracks().forEach((t) => {
+      t.stop();
+      this.camera.removeTrack(t);
+    });
+    this.camera = null;
+  }
+
+  get cameraLigada() {
+    return !!this.camera;
   }
 
   // Quantas pessoas estão vendo a MINHA tela

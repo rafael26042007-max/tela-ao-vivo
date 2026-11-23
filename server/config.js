@@ -71,6 +71,11 @@ module.exports = {
   segredo: process.env.SEGREDO || require('crypto').randomBytes(32).toString('hex'),
   temSegredoFixo: !!process.env.SEGREDO,
 
+  // ---------- Feedback ----------
+  // Webhook de um canal do Discord. Sem ele, o botão de feedback não aparece no site.
+  // Nunca coloque esse endereço no site: ele funciona como uma senha do canal.
+  feedbackWebhook: process.env.FEEDBACK_WEBHOOK || '',
+
   // ---------- Servidores ICE enviados pros navegadores ----------
   // STUN: descobre o IP público (grátis).
   iceServersBase: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }],

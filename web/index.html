@@ -103,6 +103,11 @@
 
     <p id="erro-inicio" class="erro" role="alert"></p>
     <noscript><p class="erro">Ative o JavaScript para usar o Tela ao Vivo.</p></noscript>
+
+    <!-- Só aparece se o servidor tiver o feedback ligado (FEEDBACK_WEBHOOK) -->
+    <p class="rodape-inicio">
+      <button id="botao-feedback-inicio" class="link-discreto botao-feedback" type="button" hidden>💬 Enviar feedback</button>
+    </p>
   </main>
 
   <!-- =================================================
@@ -128,6 +133,7 @@
       <div class="acoes-topo">
         <!-- Só o dono vê -->
         <button id="botao-trancar" class="botao pequeno" hidden title="Trancada = ninguém novo consegue entrar">🔒 Trancar sala</button>
+        <button id="botao-feedback-sala" class="botao pequeno botao-feedback" type="button" hidden title="Conte o que achou e o que poderia melhorar">💬 Feedback</button>
         <button id="botao-sair" class="botao perigo pequeno">Sair</button>
       </div>
     </header>
@@ -138,6 +144,8 @@
     <!-- ---------- Controles de transmissão (somem em quem só pode assistir) ---------- -->
     <section class="controles">
       <button id="botao-transmitir" class="botao principal">Transmitir minha tela</button>
+      <!-- Câmera: separada da tela, funciona também no celular -->
+      <button id="botao-camera" class="botao" type="button">📷 Ligar câmera</button>
       <label>
         Qualidade
         <select id="select-qualidade">
@@ -222,6 +230,35 @@
         <button value="cancelar" class="botao">Cancelar</button>
         <button value="automatica" class="botao">Usar a Automática</button>
         <button value="confirmar" class="botao principal">Sim, transmitir em Ultra</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- =================================================
+       Feedback (vai pro Discord do Rafael pelo servidor)
+       ================================================= -->
+  <dialog id="dialogo-feedback" class="dialogo">
+    <form id="form-feedback" method="dialog">
+      <h2>O que você achou do Tela ao Vivo?</h2>
+      <div class="notas" role="radiogroup" aria-label="Nota">
+        <label><input type="radio" name="nota" value="1"><span>😞</span>Ruim</label>
+        <label><input type="radio" name="nota" value="2"><span>😐</span>Mais ou menos</label>
+        <label><input type="radio" name="nota" value="3"><span>🙂</span>Bom</label>
+        <label><input type="radio" name="nota" value="4"><span>😍</span>Ótimo</label>
+      </div>
+      <label class="campo">
+        <span>O que poderia melhorar? Achou algum problema?</span>
+        <textarea id="texto-feedback" maxlength="1000" rows="4" placeholder="Ex: a tela travou quando..."></textarea>
+      </label>
+      <label class="campo">
+        <span>Seu nome (opcional)</span>
+        <input id="nome-feedback" type="text" maxlength="30" autocomplete="nickname">
+      </label>
+      <p class="info">Junto vai só o tipo de aparelho e navegador (ajuda a achar bugs). Nada da sua tela.</p>
+      <p id="status-feedback" class="info" role="status"></p>
+      <div class="dialogo-botoes">
+        <button value="cancelar" class="botao" formnovalidate>Cancelar</button>
+        <button id="enviar-feedback" value="enviar" class="botao principal">Enviar</button>
       </div>
     </form>
   </dialog>

@@ -178,6 +178,7 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
   padding: 16px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  /* telas maiores quando a grade é larga: com 3 ou 4 telas, 2 colunas (ver :has abaixo) */
   grid-auto-rows: max-content; /* a linha tem a altura do tile; se não couber, a grade rola (não corta a barra) */
   gap: 16px;
   overflow-y: auto;
@@ -226,7 +227,9 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .status-servidor::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .status-servidor.ok { color: #4ade80; }
 .status-servidor.erro { color: #f87171; }
-.tile:fullscreen video { object-fit: contain; }
+/* Tile em tela cheia: o vídeo ocupa tudo e a nossa barra fica embaixo */
+.tile:fullscreen { border: 0; border-radius: 0; }
+.tile:fullscreen video { object-fit: contain; flex: 1; min-height: 0; aspect-ratio: auto; max-height: none; }
 
 /* ---------- Lateral (pessoas + chat) ---------- */
 .lateral {
@@ -352,7 +355,9 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 
 /* ---------- Modo "só assistir" (aparelhos que não transmitem, ex: celular) ---------- */
 .so-quem-assiste { display: none; }
-.sala.so-assistir .controles,
+/* No celular os controles da TELA somem, mas o da câmera fica */
+.sala.so-assistir .controles > :not(#botao-camera) { display: none; }
+.sala.so-assistir .controles:has(#botao-camera[hidden]) { display: none; }
 .sala.so-assistir .dica,
 .sala.so-assistir .so-quem-transmite { display: none; }
 .sala.so-assistir .so-quem-assiste { display: block; }
@@ -377,3 +382,46 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
   /* Sem nada transmitindo, a grade fica baixinha e pessoas/chat aparecem logo */
   .grade:has(> .vazio:not([hidden])) { flex: none; }
 }
+
+/* ---------- Feedback: link discreto na entrada e janela ---------- */
+.rodape-inicio { margin: 0; text-align: center; }
+.link-discreto {
+  background: none; border: 0; padding: 4px 6px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--texto-fraco);
+}
+.link-discreto:hover { color: var(--texto); text-decoration: underline; }
+.dialogo .campo { margin-top: 12px; }
+.dialogo textarea {
+  background: var(--painel-2); color: var(--texto); border: 1px solid var(--borda); border-radius: 8px;
+  padding: 10px 12px; font: inherit; resize: vertical; min-height: 80px;
+}
+.dialogo textarea:focus { outline: 2px solid var(--azul); outline-offset: 1px; }
+.notas { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.notas label {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer;
+  padding: 8px 4px; border: 1px solid var(--borda); border-radius: 8px;
+  font-size: 12px; color: var(--texto-fraco); text-align: center;
+}
+.notas span { font-size: 22px; }
+.notas input { position: absolute; opacity: 0; pointer-events: none; }
+.notas label:has(input:checked) { border-color: var(--texto); color: var(--texto); background: var(--painel-2); }
+.notas label:has(input:focus-visible) { outline: 2px solid var(--azul); outline-offset: 1px; }
+#status-feedback:empty { display: none; }
+#status-feedback.erro { color: #f87171; }
+
+/* ---------- 3 ou 4 telas em monitor grande: 2 colunas ----------
+   Com auto-fit, 3 telas num monitor de 1920px ficavam numa fileira pequena e
+   sobrava meia tela vazia embaixo. Com 2 colunas, cada tela fica bem maior.
+   (5+ telas: volta pro automático) */
+@media (min-width: 1400px) {
+  .grade:has(> :nth-child(3 of .tile)):not(:has(> :nth-child(5 of .tile))):not(.com-destaque) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---------- Câmera ---------- */
+/* Tile de câmera menor: ela é o "rosto", a tela é o conteúdo */
+.tile.camera { max-width: 420px; width: 100%; justify-self: start; align-self: start; }
+.tile.camera.minha { border-color: var(--borda); }
+.espelhado { transform: scaleX(-1); }
+.pessoas .icone-camera { font-size: 13px; }
