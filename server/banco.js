@@ -31,6 +31,9 @@ async function conectarBanco(url = config.databaseUrl) {
     idleTimeoutMillis: 30_000,
     // Neon exige conexão criptografada (segurança: LGPD art. 46)
     ssl: local ? false : { rejectUnauthorized: true },
+    // O "channel_binding=require" da string do Neon é ignorado pelo pg: liga aqui.
+    // Amarra o login do banco à conexão criptografada (protege contra intermediário falso)
+    enableChannelBinding: !local,
   });
   pool.on('error', (erro) => console.error('Banco:', erro.message));
   try {
