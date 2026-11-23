@@ -112,6 +112,29 @@ async function entrarComDiscord({ discordId, nome, avatar = null, termosVersao }
   return rows[0];
 }
 
+// A conta desse perfil do Discord já existe? (conta nova precisa do aceite da política)
+async function contaPorDiscord(discordId) {
+  const { rows } = await pool.query('SELECT id FROM usuarios WHERE discord_id = $1', [String(discordId)]);
+  return rows[0]?.id ?? null;
+}
+
+// A conta ainda existe? (sessão de conta apagada para de valer na hora)
+async function contaExiste(usuarioId) {
+  if (!/^[0-9a-f-]{36}$/.test(String(usuarioId))) return false;
+  const { rowCount } = await pool.query('SELECT 1 FROM usuarios WHERE id = $1', [usuarioId]);
+  return rowCount === 1;
+}
+
+// Resumo da conta pro site (nome e foto)
+async function resumoConta(usuarioId) {
+  const { rows } = await pool.query('SELECT nome, discord_id, avatar FROM usuarios WHERE id = $1', [usuarioId]);
+  const u = rows[0];
+  if (!u) return null;
+  // A foto fica no Discord: aqui só se monta o endereço dela a partir do código
+  const foto = u.avatar ? `https://cdn.discordapp.com/avatars/${u.discord_id}/${u.avatar}.png?size=64` : null;
+  return { nome: u.nome, foto };
+}
+
 // Marca que a pessoa usou a conta (adia a limpeza de contas inativas)
 async function registrarAcesso(usuarioId) {
   await pool.query('UPDATE usuarios SET ultimo_acesso = now() WHERE id = $1', [usuarioId]);
@@ -184,6 +207,9 @@ module.exports = {
   bancoLigado,
   agendarLimpeza,
   entrarComDiscord,
+  contaPorDiscord,
+  contaExiste,
+  resumoConta,
   registrarAcesso,
   corrigirNome,
   meusDados,

@@ -439,3 +439,16 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .tabela-dados th, .tabela-dados td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--borda); }
 .tabela-dados th { color: var(--texto-fraco); font-weight: 600; }
 @media (max-width: 600px) { .tabela-dados { font-size: 13px; } .tabela-dados th, .tabela-dados td { padding: 6px; } }
+
+/* ---------- Conta (opcional) na tela inicial ---------- */
+.bloco-conta { margin: -12px 0 0; font-size: 13px; color: var(--texto-fraco); }
+.bloco-conta > span { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bloco-conta .link-discreto { padding: 2px 4px; }
+.bloco-conta strong { color: var(--texto); }
+.foto-conta { width: 20px; height: 20px; border-radius: 50%; }
+.acoes-conta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.dialogo .checkbox { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; cursor: pointer; }
+.dialogo .checkbox input { margin-top: 3px; }
+.dialogo a { color: #93c5fd; }
+#status-login:empty, #status-conta:empty { display: none; }
+#status-conta.erro { color: #f87171; }

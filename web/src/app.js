@@ -5,6 +5,7 @@
 import { Sinalizacao } from './conexao.js?v=__VERSAO__';
 import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, CAMERA, codecsDisponiveis } from './p2p.js?v=__VERSAO__';
 import { prepararFeedback, mostrarBotoesFeedback } from './feedback.js?v=__VERSAO__';
+import { prepararConta, mostrarConta } from './conta.js?v=__VERSAO__';
 
 // =====================================================
 // Endereço do servidor (vem do config.js)
@@ -236,6 +237,7 @@ async function acordarServidor() {
         // O servidor diz se o feedback está ligado (tem o webhook do Discord)
         const saude = await resposta.json().catch(() => ({}));
         mostrarBotoesFeedback(saude.feedback === true);
+        mostrarConta(saude); // "Entrar com Discord" (só se o login estiver disponível)
         terminar();
         estado.servidorPronto = true;
         el.statusServidor.className = 'status-servidor ok';
@@ -267,6 +269,19 @@ prepararFeedback({
   api,
   nomeAtual: () => el.campoNome.value.trim(),
   onde: () => (el.telaSala.hidden ? 'inicio' : 'sala'),
+});
+
+// ---------- Conta opcional (login com Discord) ----------
+prepararConta({
+  api,
+  // Logado: usa o nome da conta se o campo ainda estiver vazio
+  aoMudarNome: (nome) => {
+    if (!el.campoNome.value.trim()) el.campoNome.value = nome;
+  },
+  mostrarErro: (texto) => {
+    el.erroInicio.textContent = texto;
+    el.erroInicio.classList.add('destaque');
+  },
 });
 
 // ---------- Preenche nome salvo e código do link (?sala=ABC123) ----------

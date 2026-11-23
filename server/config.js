@@ -80,6 +80,17 @@ module.exports = {
   // fica guardada junto com o aceite de cada conta
   versaoTermos: '2026-11-23',
 
+  // ---------- Login com Discord ----------
+  // App "Tela ao Vivo" no Discord Developer Portal. O ID é público; o SEGREDO só no Render.
+  discordClientId: process.env.DISCORD_CLIENT_ID || '',
+  discordClientSecret: process.env.DISCORD_CLIENT_SECRET || '',
+  // Endereço público deste servidor (o redirect cadastrado no Discord tem que ser IGUAL).
+  // Vazio = descobre sozinho pelo endereço da requisição.
+  urlPublica: (process.env.URL_PUBLICA || '').replace(/\/+$/, ''),
+  // Trocáveis só pra testar com um "Discord falso"
+  discordAutorizar: process.env.DISCORD_AUTORIZAR || 'https://discord.com/oauth2/authorize',
+  discordApi: process.env.DISCORD_API || 'https://discord.com/api/v10',
+
   // ---------- Feedback ----------
   // Webhook de um canal do Discord. Sem ele, o botão de feedback não aparece no site.
   // Nunca coloque esse endereço no site: ele funciona como uma senha do canal.

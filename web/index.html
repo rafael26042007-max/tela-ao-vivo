@@ -55,6 +55,20 @@
       <input id="campo-nome" type="text" maxlength="30" placeholder="Como vão te chamar?" autocomplete="nickname" enterkeyhint="go">
     </label>
 
+    <!-- Conta (opcional): só aparece se o servidor tiver banco + app do Discord -->
+    <div id="bloco-conta" class="bloco-conta" hidden>
+      <span id="conta-desconectado">
+        <button id="botao-entrar-discord" class="link-discreto" type="button">Entrar com Discord</button>
+        <span class="info">(opcional)</span>
+      </span>
+      <span id="conta-conectado" hidden>
+        <img id="foto-conta" class="foto-conta" alt="" hidden>
+        <span>Conectado como <strong id="nome-conta"></strong></span>
+        <button id="botao-minha-conta" class="link-discreto" type="button">Minha conta</button>
+        <button id="botao-sair-conta" class="link-discreto" type="button">Sair</button>
+      </span>
+    </div>
+
     <div class="cartoes">
       <section class="cartao">
         <h2>Criar uma sala</h2>
@@ -261,6 +275,53 @@
       <div class="dialogo-botoes">
         <button value="cancelar" class="botao" formnovalidate>Cancelar</button>
         <button id="enviar-feedback" value="enviar" class="botao principal">Enviar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- =================================================
+       Antes do primeiro login: aceite da política (LGPD: consentimento)
+       ================================================= -->
+  <dialog id="dialogo-login" class="dialogo">
+    <form id="form-login" method="dialog">
+      <h2>Entrar com Discord</h2>
+      <p>A conta é <strong>opcional</strong>. Sem ela, tudo continua funcionando.</p>
+      <p>Pedimos ao Discord <strong>só o seu perfil básico</strong> (sem e-mail) e guardamos o mínimo: o número do
+        perfil, o nome e o código da foto. Você pode baixar ou apagar tudo quando quiser.</p>
+      <label class="checkbox">
+        <input id="check-aceite" type="checkbox">
+        <span>Li e concordo com a <a href="./privacidade.html" target="_blank" rel="noopener">Política de Privacidade</a></span>
+      </label>
+      <p id="status-login" class="info erro" role="alert"></p>
+      <div class="dialogo-botoes">
+        <button value="cancelar" class="botao" formnovalidate>Cancelar</button>
+        <button id="continuar-discord" value="continuar" class="botao principal">Continuar com Discord</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- =================================================
+       Minha conta (LGPD: corrigir, baixar e apagar)
+       ================================================= -->
+  <dialog id="dialogo-conta" class="dialogo">
+    <form id="form-conta" method="dialog">
+      <h2>Minha conta</h2>
+      <label class="campo">
+        <span>Nome</span>
+        <span class="linha">
+          <input id="campo-nome-conta" type="text" maxlength="32" autocomplete="nickname">
+          <button id="salvar-nome-conta" value="nome" class="botao" type="button">Salvar</button>
+        </span>
+      </label>
+      <div class="acoes-conta">
+        <button id="baixar-dados" class="botao" type="button">⬇ Baixar meus dados</button>
+        <button id="apagar-conta" class="botao perigo" type="button">Apagar minha conta</button>
+      </div>
+      <p class="info">Apagar remove a conta e tudo ligado a ela, na hora e sem volta. O seu Discord não é afetado.
+        <a href="./privacidade.html" target="_blank" rel="noopener">Privacidade</a></p>
+      <p id="status-conta" class="info" role="status"></p>
+      <div class="dialogo-botoes">
+        <button value="fechar" class="botao">Fechar</button>
       </div>
     </form>
   </dialog>

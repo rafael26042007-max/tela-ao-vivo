@@ -139,6 +139,7 @@ server/                 # vai pro Render
 ├── limites.js          # anti-abuso
 ├── feedback.js         # confere o feedback e repassa pro webhook do Discord
 ├── banco.js            # PostgreSQL (contas opcionais): conta, exportar, apagar, limpar inativas
+├── login.js            # login com Discord (OAuth2) e sessão assinada
 ├── migracoes/          # estrutura do banco em SQL (aplicada sozinha ao iniciar)
 ├── certificado.js      # HTTPS autoassinado (só pra testar na rede local)
 └── config.js           # configurações
@@ -151,7 +152,8 @@ web/                    # vai pro GitHub Pages (não precisa compilar)
     ├── app.js          # telas, botões, chat, pessoas
     ├── p2p.js          # malha WebRTC (perfect negotiation), qualidades e medição do envio
     ├── automatico.js   # decide quando a qualidade Automática sobe ou desce
-    ├── feedback.js     # janela "O que você achou?" 
+    ├── feedback.js     # janela "O que você achou?"
+    ├── conta.js        # "Entrar com Discord" e "Minha conta" (corrigir, baixar, apagar)
     └── conexao.js      # WebSocket com reconexão automática
 render.yaml             # configuração do Render
 .github/workflows/pages.yml  # publica web/ no GitHub Pages
@@ -220,6 +222,18 @@ Ao iniciar, o servidor cria as tabelas sozinho (`server/migracoes/`). Se o banco
   `apagarConta` (apaga tudo em cascata)
 - Conta sem uso por 12 meses é apagada sozinha (`MESES_INATIVIDADE`)
 - Mudou o texto da política? Mude a versão no HTML **e** em `versaoTermos` (`server/config.js`)
+
+### Login com Discord (contas opcionais)
+Precisa do banco (acima) e de um app no [Discord Developer Portal](https://discord.com/developers/applications):
+1. App **Tela ao Vivo** → **OAuth2** → **Redirects**: `https://tela-ao-vivo-27wj.onrender.com/auth/discord/retorno`
+2. No Render (**Environment**): `DISCORD_CLIENT_ID` (público, já está no `render.yaml`) e `DISCORD_CLIENT_SECRET`
+   (**Redefinir segredo** no Discord; nunca no site nem no GitHub)
+
+Como funciona (`server/login.js`): o site manda a pessoa pro servidor, que manda pro Discord pedindo **só o escopo
+`identify`** (sem e-mail). Na volta, o servidor confere o `state` (memória + cookie, contra login forjado), troca o
+código pelo token, lê o perfil e **joga o token fora**. Conta nova só é criada com o **aceite da política**. A sessão
+é assinada com o `SEGREDO`, vale 30 dias e para de valer na hora se a conta for apagada. Em "Minha conta" a pessoa
+corrige o nome, **baixa os dados** (JSON) e **apaga a conta**.
 
 ### Quando a conexão P2P falha (TURN)
 Algumas redes (4G com CGNAT, rede de empresa/faculdade) bloqueiam conexão direta. O site avisa quando isso acontece.
