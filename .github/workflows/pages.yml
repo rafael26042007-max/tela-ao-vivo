@@ -23,11 +23,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  publicar:
+  # ---------- 1) Empacota a pasta web/ ----------
+  # Separado da publicação (formato oficial do GitHub): com tudo num job só, às vezes
+  # a publicação começava antes do pacote ficar registrado e falhava com
+  # 'No artifacts named "github-pages" were found'.
+  empacotar:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.publicacao.outputs.page_url }}
     steps:
       - name: Baixar o código
         uses: actions/checkout@v5
@@ -48,6 +49,14 @@ jobs:
         with:
           path: web
 
+  # ---------- 2) Publica (só depois que o pacote existe) ----------
+  publicar:
+    needs: empacotar
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.publicacao.outputs.page_url }}
+    steps:
       - name: Publicar
         id: publicacao
         uses: actions/deploy-pages@v5
