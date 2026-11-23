@@ -5,7 +5,7 @@
 // Usa o padrão "perfect negotiation": os dois lados podem iniciar a
 // negociação; se colidirem, o lado "educado" (polido) cede.
 // =====================================================
-import { decidirNivel, amostraRuim, NIVEL_INICIAL } from './automatico.js';
+import { decidirNivel, amostraRuim, NIVEL_INICIAL } from './automatico.js?v=__VERSAO__';
 
 // -----------------------------------------------------
 // Qualidades (quanto menor, menos CPU e menos internet)

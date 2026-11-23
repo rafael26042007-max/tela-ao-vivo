@@ -35,6 +35,14 @@ jobs:
       - name: Configurar o Pages
         uses: actions/configure-pages@v5
 
+      # Troca __VERSAO__ pelo commit nos endereços dos arquivos (ex: app.js?v=3a3f69e).
+      # Assim cada versão tem endereços novos e o cache do navegador não mistura versões.
+      - name: Marcar a versão nos arquivos
+        run: |
+          VERSAO="${GITHUB_SHA::7}"
+          grep -rl "__VERSAO__" web | xargs sed -i "s/__VERSAO__/${VERSAO}/g"
+          echo "Versão publicada: ${VERSAO}"
+
       - name: Empacotar a pasta web/
         uses: actions/upload-pages-artifact@v5
         with:

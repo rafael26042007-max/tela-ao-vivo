@@ -2,8 +2,8 @@
 // Tela ao Vivo - app do navegador (versão P2P)
 // Fluxo: acordar servidor -> início (criar/entrar) -> sala
 // =====================================================
-import { Sinalizacao } from './conexao.js';
-import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, codecsDisponiveis } from './p2p.js';
+import { Sinalizacao } from './conexao.js?v=__VERSAO__';
+import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, codecsDisponiveis } from './p2p.js?v=__VERSAO__';
 
 // =====================================================
 // Endereço do servidor (vem do config.js)
@@ -83,6 +83,8 @@ const estado = {
   espectadores: [], // ids de quem vê a MINHA tela
   voltando: new Map(), // id -> timer (pessoas que podem voltar depois de o servidor reiniciar)
   limite: 8, // máximo de pessoas da sala (o dono escolheu)
+  ultraConfirmado: false, // já disse "sim" pro Ultra nesta página
+  qualidadeAnterior: 'automatica', // pra voltar se cancelar o Ultra
   timerEspera: null, // sala cheia: tentando entrar de tempos em tempos
   saidasRecentes: new Map(), // nome -> timer (quem saiu há pouco: se voltar logo, o chat nem fica sabendo)
   naoLidas: 0,
@@ -756,11 +758,13 @@ function prepararControles() {
     el.selectQualidade.value = qualidadeSalva;
   }
   el.avisoUltra.hidden = el.selectQualidade.value !== 'ultra';
+  estado.qualidadeAnterior = el.selectQualidade.value === 'ultra' ? 'automatica' : el.selectQualidade.value;
 
   el.selectCodec.addEventListener('change', () => guardar('codec', el.selectCodec.value));
   el.selectQualidade.addEventListener('change', () => {
-    guardar('qualidade-v2', el.selectQualidade.value);
-    el.avisoUltra.hidden = el.selectQualidade.value !== 'ultra';
+    // Escolheu o Ultra (4K/120)? Pergunta ANTES se tem certeza
+    if (el.selectQualidade.value === 'ultra' && !estado.ultraConfirmado) return perguntarUltra('escolha');
+    aplicarQualidadeEscolhida();
   });
 
   // ---------- Dá pra transmitir daqui? ----------
@@ -781,30 +785,66 @@ function prepararControles() {
 el.botaoTransmitir.addEventListener('click', () => {
   if (estado.mudandoTransmissao) return;
   if (estado.malha.transmitindo) return pararTransmissao();
-  // Ultra (4K/120) é pesado: pergunta antes se a pessoa tem certeza
-  if (el.selectQualidade.value === 'ultra') return confirmarUltra();
+  // Ultra que veio salvo de outra vez (ainda não confirmado agora): pergunta antes de transmitir
+  if (el.selectQualidade.value === 'ultra' && !estado.ultraConfirmado) return perguntarUltra('transmitir');
   comecarTransmissao();
 });
 
+// Guarda a qualidade escolhida e mostra/esconde o aviso amarelo do Ultra
+function aplicarQualidadeEscolhida() {
+  const valor = el.selectQualidade.value;
+  guardar('qualidade-v2', valor);
+  el.avisoUltra.hidden = valor !== 'ultra';
+  if (valor !== 'ultra') estado.qualidadeAnterior = valor;
+}
+
 // -----------------------------------------------------
-// Janela "tem certeza?" do Ultra
-// O clique no botão da janela já conta como gesto do usuário,
-// então o navegador deixa abrir a escolha de tela logo em seguida
+// Janela "tem certeza?" do Ultra (4K/120)
+// modo 'escolha':    abriu ao escolher o Ultra na lista
+// modo 'transmitir': abriu ao clicar em Transmitir com o Ultra salvo de outra vez
+// O clique no botão da janela conta como gesto do usuário, então o navegador
+// deixa abrir a escolha de tela logo em seguida.
 // -----------------------------------------------------
 const dialogoUltra = $('dialogo-ultra');
-function confirmarUltra() {
-  if (!dialogoUltra.showModal) return comecarTransmissao(); // navegador muito antigo: segue direto
+const botaoConfirmarUltra = dialogoUltra.querySelector('button[value="confirmar"]');
+let modoUltra = 'escolha';
+
+function perguntarUltra(modo) {
+  modoUltra = modo;
+  if (!dialogoUltra.showModal) {
+    // navegador muito antigo, sem <dialog>: aceita direto
+    estado.ultraConfirmado = true;
+    aplicarQualidadeEscolhida();
+    return modo === 'transmitir' ? comecarTransmissao() : undefined;
+  }
+  botaoConfirmarUltra.textContent = modo === 'transmitir' ? 'Sim, transmitir em Ultra' : 'Sim, usar Ultra';
+  $('titulo-ultra').textContent =
+    modo === 'transmitir' ? 'Transmitir em Ultra (4K, 120 fps)?' : 'Usar a qualidade Ultra (4K, 120 fps)?';
   dialogoUltra.returnValue = '';
   dialogoUltra.showModal();
 }
+
 dialogoUltra.addEventListener('close', () => {
-  if (dialogoUltra.returnValue === 'confirmar') return comecarTransmissao();
-  if (dialogoUltra.returnValue === 'automatica') {
-    el.selectQualidade.value = 'automatica';
-    el.selectQualidade.dispatchEvent(new Event('change')); // salva a escolha e esconde o aviso
-    return comecarTransmissao();
+  const resposta = dialogoUltra.returnValue;
+
+  if (resposta === 'confirmar') {
+    estado.ultraConfirmado = true; // não pergunta de novo enquanto a página estiver aberta
+    el.selectQualidade.value = 'ultra';
+    aplicarQualidadeEscolhida();
+    if (modoUltra === 'transmitir') comecarTransmissao();
+    return;
   }
-  // Cancelar (ou Esc): não faz nada
+
+  if (resposta === 'automatica') {
+    el.selectQualidade.value = 'automatica';
+    aplicarQualidadeEscolhida();
+    if (modoUltra === 'transmitir') comecarTransmissao();
+    return;
+  }
+
+  // Cancelar (ou Esc): volta pra qualidade que estava antes
+  el.selectQualidade.value = estado.qualidadeAnterior || 'automatica';
+  aplicarQualidadeEscolhida();
 });
 
 // ---------- Começar ----------

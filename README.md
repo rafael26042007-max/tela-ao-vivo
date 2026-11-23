@@ -168,6 +168,8 @@ Modo desenvolvimento (reinicia o servidor ao salvar): `npm run dev`
 ### Site → GitHub Pages
 1. No repositório: **Settings → Pages → Source: GitHub Actions**
 2. Todo push na `main` que mexer em `web/` publica sozinho (aba **Actions**)
+3. Na publicação, o `__VERSAO__` dos endereços (ex: `app.js?v=__VERSAO__`) vira o número do commit.
+   Assim o navegador nunca mistura um HTML novo com um JS antigo guardado em cache
 
 ### Servidor → Render
 1. Em [render.com](https://render.com): **New → Blueprint** → escolha este repositório

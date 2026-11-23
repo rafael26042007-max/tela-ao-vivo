@@ -22,7 +22,9 @@
   <meta name="twitter:card" content="summary_large_image">
 
   <!-- Caminhos relativos (./) pra funcionar no GitHub Pages (/tela-ao-vivo/) e no seu PC -->
-  <link rel="stylesheet" href="./style.css">
+  <!-- ?v=__VERSAO__: a publicação troca pelo número da versão (ver .github/workflows/pages.yml),
+       assim o navegador nunca mistura o HTML novo com um JS antigo guardado em cache -->
+  <link rel="stylesheet" href="./style.css?v=__VERSAO__">
 </head>
 <body>
 
@@ -205,7 +207,7 @@
        ================================================= -->
   <dialog id="dialogo-ultra" class="dialogo">
     <form method="dialog">
-      <h2>Transmitir em Ultra (4K, 120 fps)?</h2>
+      <h2 id="titulo-ultra">Usar a qualidade Ultra (4K, 120 fps)?</h2>
       <p>Essa é a qualidade mais pesada. Ela só funciona bem se:</p>
       <ul>
         <li>🖥️ a sua tela for <strong>4K com 120 Hz</strong> (senão, o navegador manda o máximo que a tela tiver);</li>
@@ -222,7 +224,7 @@
     </form>
   </dialog>
 
-  <script src="./config.js"></script>
-  <script type="module" src="./src/app.js"></script>
+  <script src="./config.js?v=__VERSAO__"></script>
+  <script type="module" src="./src/app.js?v=__VERSAO__"></script>
 </body>
 </html>
