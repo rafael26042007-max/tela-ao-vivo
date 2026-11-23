@@ -25,6 +25,14 @@ async function conectarBanco(url = config.databaseUrl) {
   if (!url) return false;
   const { Pool } = require('pg'); // só carrega se for usar
   const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
+  // sslmode=verify-full: criptografa E confere o certificado do Neon.
+  // (A string do Neon vem com sslmode=require, que na próxima versão do pg passa a
+  // só criptografar, sem conferir quem está do outro lado. Fixando aqui, não enfraquece.)
+  if (!local) {
+    const endereco = new URL(url);
+    endereco.searchParams.set('sslmode', 'verify-full');
+    url = endereco.toString();
+  }
   pool = new Pool({
     connectionString: url,
     max: 3, // plano grátis: poucas conexões bastam
