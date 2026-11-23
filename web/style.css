@@ -22,6 +22,7 @@ body {
   color: var(--texto);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 15px;
+  accent-color: var(--destaque); /* checkbox do navegador na cor do tema (E6) */
 }
 
 [hidden] { display: none !important; }
@@ -55,7 +56,8 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .botao:disabled { opacity: .5; cursor: not-allowed; }
 .botao.principal { background: var(--destaque); border-color: var(--destaque); color: #fff; }
 .botao.principal:hover { background: var(--destaque-hover); }
-.botao.perigo:hover { background: var(--destaque); border-color: var(--destaque); }
+.botao.perigo { color: #fca5a5; border-color: #7f1d1d; } /* parar/sair: dá pra ver sem passar o mouse (S7) */
+.botao.perigo:hover { background: var(--destaque); border-color: var(--destaque); color: #fff; }
 .botao.pequeno { padding: 6px 12px; font-size: 13px; }
 
 .linha { display: flex; gap: 8px; }
@@ -68,6 +70,7 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .linha-opcao select { padding: 6px 10px; }
 .cartao .checkbox { display: flex; align-items: center; gap: 8px; color: var(--texto-fraco); font-size: 14px; cursor: pointer; }
 .cartao .info.sem-margem { margin: -4px 0 0; font-size: 12px; }
+.cartao:has(#check-senha:checked) .aviso-sem-senha { display: none; } /* (E3) */
 
 /* Sala cheia: esperando vaga */
 .espera-vaga {
@@ -98,6 +101,9 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
   animation: pulsar 2s infinite;
 }
 .marca.pequena .ponto-ao-vivo { width: 10px; height: 10px; }
+@media (prefers-reduced-motion: reduce) {
+  .ponto-ao-vivo, .girando { animation: none; } /* (E7) */
+}
 @keyframes pulsar {
   70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
   100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
@@ -109,9 +115,11 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .inicio {
   max-width: 720px;
   margin: 0 auto;
-  padding: 64px 20px;
+  min-height: 100vh;
+  padding: 48px 20px;
   display: flex;
   flex-direction: column;
+  justify-content: center; /* em tela grande, não sobra meia tela vazia embaixo (E5) */
   gap: 20px;
 }
 .subtitulo { color: var(--texto-fraco); margin: -8px 0 8px; }
@@ -119,7 +127,7 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .campo { display: flex; flex-direction: column; gap: 6px; }
 .campo span { font-size: 13px; color: var(--texto-fraco); }
 
-.cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.cartoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; align-items: start; /* (E4) */ }
 .cartao {
   background: var(--painel);
   border: 1px solid var(--borda);
@@ -170,7 +178,7 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
   padding: 16px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  grid-auto-rows: minmax(240px, auto);
+  grid-auto-rows: max-content; /* a linha tem a altura do tile; se não couber, a grade rola (não corta a barra) */
   gap: 16px;
   overflow-y: auto;
   align-content: start;
@@ -191,7 +199,12 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
   display: flex; flex-direction: column;
 }
 .tile.minha { border-color: var(--destaque); }
-.tile video { width: 100%; flex: 1; min-height: 0; object-fit: contain; background: #000; }
+.tile video {
+  width: 100%; flex: none; object-fit: contain; background: #000;
+  aspect-ratio: 16 / 9; max-height: calc(100vh - 190px); /* sem faixas pretas sobrando (S4) */
+}
+/* Em destaque (📌) o vídeo ocupa toda a altura do tile */
+.grade.com-destaque .tile.destaque video { flex: 1; min-height: 0; aspect-ratio: auto; max-height: none; }
 .tile-barra {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 6px 10px;
@@ -244,11 +257,12 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
    ===================================================== */
 
 /* ---------- Tela inicial: selos e barra de progresso ---------- */
-.selos { list-style: none; margin: -6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.selos li {
-  font-size: 12px; color: var(--texto-fraco);
-  background: var(--painel); border: 1px solid var(--borda);
-  padding: 4px 10px; border-radius: 999px;
+.selos { list-style: none; margin: -14px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 0; font-size: 13px; color: var(--texto-fraco); }
+.selos li + li::before { content: "·"; margin: 0 8px; } /* uma linha de texto, não 4 pílulas (E2) */
+@media (max-width: 520px) {
+  /* no celular a linha quebra: sem o "·" pra não começar linha com ele */
+  .selos { gap: 2px 14px; }
+  .selos li + li::before { content: none; }
 }
 .bloco-servidor { display: flex; flex-direction: column; gap: 8px; }
 .bloco-servidor .status-servidor { margin: 0; }
@@ -264,6 +278,7 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .botao[data-confirmando] { background: var(--destaque); border-color: var(--destaque); color: #fff; }
 
 /* ---------- Controles: dica e "Avançado" ---------- */
+#dica-transmitir { display: none; } /* a tela vazia já ensina isso (S1) */
 .dica { margin: 0; padding: 6px 16px; font-size: 12px; color: var(--texto-fraco); border-bottom: 1px solid var(--borda); }
 .avancado { color: var(--texto-fraco); font-size: 13px; }
 .avancado summary { cursor: pointer; user-select: none; }
@@ -291,11 +306,15 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
   content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cor, var(--texto-fraco)); flex: none;
 }
 .tile-barra .acoes { align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-.volume { width: 70px; accent-color: var(--destaque); padding: 0; }
+.volume { width: 70px; accent-color: var(--texto-fraco); padding: 0; } /* (S6) */
 
 /* ---------- Qualidade: aviso do Ultra e linha técnica da prévia ---------- */
 .aviso-ultra { color: #fcd34d; background: #2a220d; }
 #info-qualidade { color: var(--texto); font-weight: 600; }
+/* Informação (qualidade em uso, quem assiste) no canto direito; controles à esquerda (S2) */
+.controles #info-qualidade, .controles #info-espectadores { order: 1; }
+.controles .avancado { margin-right: auto; } /* empurra as informações pra direita */
+.tile.minha .tile-barra .info { display: none; } /* já aparece na barra de controles (S3) */
 .tile .tecnico {
   position: absolute; top: 8px; left: 8px;
   font-size: 11px; color: #e8eaef; background: rgba(0, 0, 0, .65);
@@ -318,6 +337,12 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .pessoas li { align-items: center; }
 .pessoas .direita { display: flex; align-items: center; gap: 6px; }
 .botao.mini { padding: 2px 8px; font-size: 11px; font-weight: 500; }
+@media (hover: hover) {
+  .pessoas .botao.mini { display: none; } /* (S5) */
+  .pessoas li:hover .botao.mini,
+  .pessoas li:focus-within .botao.mini,
+  .pessoas .botao.mini[data-confirmando] { display: inline-block; }
+}
 
 /* ---------- Chat: contador de não lidas ---------- */
 .bloco h3 .nao-lidas {
@@ -340,7 +365,7 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 @media (max-width: 800px) {
   .sala { height: auto; min-height: 100vh; }
   .conteudo { flex-direction: column; }
-  .lateral { width: 100%; border-left: 0; border-top: 1px solid var(--borda); }
+  .lateral { width: 100%; flex: 1; border-left: 0; border-top: 1px solid var(--borda); } /* preenche até o fim da tela */
   .chat { min-height: 320px; }
   .grade, .grade.com-destaque { grid-template-columns: 1fr; }
   .grade.com-destaque .tile.destaque { grid-row: auto; min-height: 50vh; }

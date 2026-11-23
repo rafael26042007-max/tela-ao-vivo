@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tela ao Vivo</title>
-  <meta name="description" content="Compartilhe a tela ao vivo com até 8 pessoas, direto do navegador. Grátis, sem instalar nada e nada é gravado.">
+  <meta name="description" content="Compartilhe a tela ao vivo com até 12 pessoas, direto do navegador. Grátis, sem instalar nada e nada é gravado.">
   <meta name="theme-color" content="#0f1115">
 
   <!-- Ícone da aba: bolinha vermelha "ao vivo" (SVG direto no endereço, sem arquivo) -->
@@ -14,7 +14,7 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Tela ao Vivo">
   <meta property="og:title" content="Tela ao Vivo: entra aí na sala!">
-  <meta property="og:description" content="Assista e compartilhe telas ao vivo com até 8 pessoas, direto do navegador. Grátis e sem instalar nada.">
+  <meta property="og:description" content="Assista e compartilhe telas ao vivo com até 12 pessoas, direto do navegador. Grátis e sem instalar nada.">
   <meta property="og:image" content="https://rafael26042007-max.github.io/tela-ao-vivo/previa.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -36,12 +36,12 @@
       <span class="ponto-ao-vivo"></span>
       <h1>Tela ao Vivo</h1>
     </div>
-    <p class="subtitulo">Assista e compartilhe telas ao vivo com até 8 pessoas, direto do navegador.</p>
+    <p class="subtitulo">Assista e compartilhe telas ao vivo com até 12 pessoas, direto do navegador.</p>
     <ul class="selos">
-      <li>✓ Grátis</li>
-      <li>✓ Sem instalar nada</li>
-      <li>✓ Nada é gravado</li>
-      <li>✓ O vídeo vai direto de um PC pro outro</li>
+      <li>Grátis</li>
+      <li>Sem instalar nada</li>
+      <li>Nada é gravado</li>
+      <li>O vídeo vai direto de um PC pro outro</li>
     </ul>
 
     <!-- Estado do servidor (no plano grátis ele "dorme" e leva até 1 min pra acordar) -->
@@ -75,12 +75,14 @@
           🔒 Proteger com senha
         </label>
         <input id="campo-senha-criar" type="password" maxlength="64" placeholder="Senha da sala" autocomplete="new-password" hidden>
-        <p class="info sem-margem">Sem senha, qualquer um com o código entra.</p>
+        <!-- Some quando "Proteger com senha" é marcado (ver .aviso-sem-senha no CSS) -->
+        <p class="info sem-margem aviso-sem-senha">Sem senha, qualquer um com o código entra.</p>
         <button id="botao-criar" class="botao principal" disabled>Criar sala</button>
       </section>
 
       <section class="cartao">
         <h2>Entrar numa sala</h2>
+        <p>Digite o código ou abra o link que te mandaram.</p>
         <form id="form-entrar" class="coluna">
           <div class="linha">
             <input id="campo-codigo" type="text" maxlength="7" placeholder="CÓDIGO" autocomplete="off" spellcheck="false">
