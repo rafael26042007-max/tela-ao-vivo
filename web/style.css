@@ -293,6 +293,27 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .tile-barra .acoes { align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .volume { width: 70px; accent-color: var(--destaque); padding: 0; }
 
+/* ---------- Qualidade: aviso do Ultra e linha técnica da prévia ---------- */
+.aviso-ultra { color: #fcd34d; background: #2a220d; }
+#info-qualidade { color: var(--texto); font-weight: 600; }
+.tile .tecnico {
+  position: absolute; top: 8px; left: 8px;
+  font-size: 11px; color: #e8eaef; background: rgba(0, 0, 0, .65);
+  padding: 2px 8px; border-radius: 6px; pointer-events: none;
+}
+
+/* ---------- Janela "tem certeza?" (Ultra) ---------- */
+.dialogo {
+  max-width: 520px; width: calc(100% - 32px);
+  background: var(--painel); color: var(--texto);
+  border: 1px solid var(--borda); border-radius: var(--raio); padding: 22px;
+}
+.dialogo::backdrop { background: rgba(0, 0, 0, .65); }
+.dialogo h2 { margin: 0 0 10px; font-size: 19px; }
+.dialogo ul { padding-left: 4px; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.dialogo p { margin: 8px 0; }
+.dialogo-botoes { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 16px; }
+
 /* ---------- Pessoas: dono e botão de remover ---------- */
 .pessoas li { align-items: center; }
 .pessoas .direita { display: flex; align-items: center; gap: 6px; }

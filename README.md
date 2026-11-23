@@ -19,7 +19,10 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 
 **Transmitir e assistir**
 - **Várias pessoas transmitindo** ao mesmo tempo; dá pra **transmitir e assistir com o mesmo usuário**
-- **Áudio** da aba/sistema (opcional) e **qualidade** (Economia, Equilibrado, Fluido); codec em "Avançado"
+- **Qualidade Automática** (padrão): sobe e desce sozinha conforme o PC e a internet de quem transmite aguentam
+- Ou escolha na mão: **Mínima, Economia, Equilibrado, Fluido** ou **Ultra (4K, até 120 fps)**, que pede confirmação antes
+- A prévia mostra **o que está saindo de verdade** (ex: "Enviando 1920×1080 · 15 fps · limitado por internet")
+- **Áudio** da aba/sistema (opcional); codec em "Avançado"
 - **📌 Tela em destaque**: uma tela grande e as outras numa coluna ao lado
 - **Volume por tela**, **tela cheia** e **Ocultar** (quem transmite para de enviar o vídeo pra você)
 - **Quem está assistindo**: quem transmite vê os nomes ("👁 2 assistindo: Ana, Beto")
@@ -55,11 +58,37 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 Por isso o **bitrate se ajusta sozinho**: até 3 espectadores cada um recebe a qualidade escolhida; com mais gente,
 cada cópia fica mais leve, e o upload total fica parecido com o de 3 espectadores (mínimo de 300 kbps por pessoa).
 
+### Qualidades
+
+| Qualidade | Resolução | FPS | Bitrate por pessoa | Pra quê |
+|---|---|---|---|---|
+| 🔄 **Automática** (padrão) | até 1080p | até 30 | varia | Ajusta sozinha pra não travar |
+| Mínima | 480p | 10 | 300 kbps | Internet ou PC bem fracos |
+| Economia | 720p | 10 | 600 kbps | Internet fraca |
+| Equilibrado | 1080p | 15 | 1,2 Mbps | Telas com texto, sites, código |
+| Fluido | 1080p | 30 | 2,5 Mbps | Jogos e vídeos |
+| Ultra | 4K | até 120 | 20 Mbps | Tela 4K 120 Hz, PC forte, 1 ou 2 pessoas assistindo |
+
+**Como a Automática decide** (`web/src/automatico.js`): a cada 2 segundos, quem transmite lê as estatísticas do
+WebRTC (`getStats`) de cada cópia que envia:
+
+- **CPU no limite** (`qualityLimitationReason = "cpu"`), **internet no limite** (a banda disponível,
+  `availableOutgoingBitrate`, não chega a 80% do que está sendo enviado), **perda de pacotes acima de 5%** ou
+  **atraso acima de 500 ms** → depois de ~6 s assim, **desce** um degrau (Fluido → Equilibrado → Economia → Mínima)
+- **Tudo bem por ~20 s** → **sobe** um degrau (devagar, pra não ficar indo e voltando)
+- Ela captura em 1080p/30 e só muda os limites do encoder (`setParameters`: bitrate, FPS e
+  `scaleResolutionDownBy`), então **ninguém precisa escolher a tela de novo** e quem assiste não perde a imagem
+
+> Por que não usar só o `qualityLimitationReason = "bandwidth"`? O Chrome também reporta "bandwidth" quando o
+> limite é o **nosso** teto de bitrate (ele reduz a resolução pra caber). Por isso a internet é medida pela banda disponível.
+
+Nas qualidades manuais, o site **avisa** quando o PC ou a internet não estão dando conta ("a imagem pode travar").
+
 ### Economia de processamento
 
 - Se alguém **oculta** a sua tela, você **para de codificar e enviar** pra essa pessoa
 - **Uma camada só** de vídeo, com limite de FPS e bitrate
-- `contentHint = "detail"`: o encoder prioriza a nitidez do texto
+- `contentHint`: "detail" (nitidez do texto) nas qualidades de texto, "motion" (fluidez) no Fluido e no Ultra
 - O servidor não toca no vídeo
 
 ## Proteções
@@ -106,7 +135,8 @@ web/                    # vai pro GitHub Pages (não precisa compilar)
 ├── config.js           # endereço do servidor
 └── src/
     ├── app.js          # telas, botões, chat, pessoas
-    ├── p2p.js          # malha WebRTC (perfect negotiation)
+    ├── p2p.js          # malha WebRTC (perfect negotiation), qualidades e medição do envio
+    ├── automatico.js   # decide quando a qualidade Automática sobe ou desce
     └── conexao.js      # WebSocket com reconexão automática
 render.yaml             # configuração do Render
 .github/workflows/pages.yml  # publica web/ no GitHub Pages

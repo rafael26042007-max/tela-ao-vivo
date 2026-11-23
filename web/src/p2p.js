@@ -5,16 +5,24 @@
 // Usa o padrão "perfect negotiation": os dois lados podem iniciar a
 // negociação; se colidirem, o lado "educado" (polido) cede.
 // =====================================================
+import { decidirNivel, amostraRuim, NIVEL_INICIAL } from './automatico.js';
 
 // -----------------------------------------------------
 // Qualidades (quanto menor, menos CPU e menos internet)
 // Lembre: em P2P você envia UMA cópia pra cada pessoa que assiste
 // -----------------------------------------------------
+// movimento: true = prioriza fluidez (jogo/vídeo); senão prioriza nitidez (texto)
 export const QUALIDADES = {
-  economia: { largura: 1280, altura: 720, fps: 10, bitrate: 600_000 },
-  equilibrado: { largura: 1920, altura: 1080, fps: 15, bitrate: 1_200_000 },
-  fluido: { largura: 1920, altura: 1080, fps: 30, bitrate: 2_500_000 },
+  minima: { nome: 'Mínima', largura: 854, altura: 480, fps: 10, bitrate: 300_000 },
+  economia: { nome: 'Economia', largura: 1280, altura: 720, fps: 10, bitrate: 600_000 },
+  equilibrado: { nome: 'Equilibrado', largura: 1920, altura: 1080, fps: 15, bitrate: 1_200_000 },
+  fluido: { nome: 'Fluido', largura: 1920, altura: 1080, fps: 30, bitrate: 2_500_000, movimento: true },
+  // Ultra: só sai 4K/120 se a tela for 4K 120 Hz e o PC/internet aguentarem
+  ultra: { nome: 'Ultra', largura: 3840, altura: 2160, fps: 120, bitrate: 20_000_000, movimento: true },
 };
+
+// Automática: captura como "Fluido" e o encoder sobe/desce entre os degraus (ver automatico.js)
+export const CAPTURA_AUTOMATICA = 'fluido';
 
 // -----------------------------------------------------
 // Bitrate por pessoa (ajuste automático pra salas cheias)
@@ -195,8 +203,25 @@ export class MalhaP2P {
   // =====================================================
   transmitir(stream, { qualidade, codec }) {
     const video = stream.getVideoTracks()[0];
-    if (video) video.contentHint = 'detail'; // tela tem texto -> prioriza nitidez
-    this.transmissao = { stream, qualidade, codec };
+    const automatico = qualidade === 'automatica';
+    const nivel = automatico ? NIVEL_INICIAL : QUALIDADES[qualidade] ? qualidade : 'equilibrado';
+
+    // Dica pro encoder: texto -> nitidez ('detail'); jogo/vídeo -> fluidez ('motion');
+    // automática -> equilibrado (o próprio controle ajusta fps e resolução)
+    if (video) video.contentHint = automatico ? '' : QUALIDADES[nivel].movimento ? 'motion' : 'detail';
+
+    this.transmissao = {
+      stream,
+      qualidade,
+      codec,
+      automatico,
+      nivel, // degrau atual (na manual, é o escolhido)
+      alturaCaptura: video?.getSettings().height || QUALIDADES[nivel].altura,
+      amostras: [],
+      ignorarAmostras: 5, // ~10s de aquecimento (o WebRTC começa medindo a banda por baixo)
+      ultimoAvisoLimite: 0,
+    };
+    this.iniciarMedicao();
     for (const par of this.pares.values()) {
       par.ocultoPeloOutro = false; // transmissão nova: todo mundo começa vendo
       this.adicionarTransmissao(par);
@@ -205,8 +230,8 @@ export class MalhaP2P {
   }
 
   adicionarTransmissao(par) {
-    const { stream, qualidade, codec } = this.transmissao;
-    const q = QUALIDADES[qualidade] ?? QUALIDADES.equilibrado;
+    const { stream, codec } = this.transmissao;
+    const q = this.qualidadeAtual;
 
     for (const track of stream.getTracks()) {
       const existente = par.transceptores[track.kind];
@@ -218,14 +243,18 @@ export class MalhaP2P {
         existente.sender.setStreams?.(stream);
         if (track.kind === 'video') {
           preferirCodec(existente, codec);
-          this.limitarVideo(existente.sender, q);
+          this.limitarVideo(existente.sender);
         }
         continue;
       }
 
       const opcoes = { direction: 'sendonly', streams: [stream] };
       // Uma camada só, com limite de bitrate e fps -> menos CPU e internet
-      if (track.kind === 'video') opcoes.sendEncodings = [{ maxBitrate: this.bitrateAtual(q), maxFramerate: q.fps }];
+      if (track.kind === 'video') {
+        opcoes.sendEncodings = [
+          { maxBitrate: this.bitrateAtual(), maxFramerate: q.fps, scaleResolutionDownBy: this.reducaoAtual() },
+        ];
+      }
       const transceptor = par.pc.addTransceiver(track, opcoes);
       if (track.kind === 'video') preferirCodec(transceptor, codec);
       par.transceptores[track.kind] = transceptor;
@@ -238,16 +267,26 @@ export class MalhaP2P {
     return [...this.pares.values()].filter((p) => !p.ocultoPeloOutro).length;
   }
 
-  bitrateAtual(q) {
-    return bitratePorPessoa(q.bitrate, this.quantosVendo());
+  get qualidadeAtual() {
+    return QUALIDADES[this.transmissao?.nivel] ?? QUALIDADES.equilibrado;
   }
 
-  async limitarVideo(sender, q) {
+  bitrateAtual() {
+    return bitratePorPessoa(this.qualidadeAtual.bitrate, this.quantosVendo());
+  }
+
+  // Quanto reduzir a resolução capturada pra chegar na do degrau (1 = sem reduzir)
+  reducaoAtual() {
+    return Math.max(1, (this.transmissao?.alturaCaptura || 1080) / this.qualidadeAtual.altura);
+  }
+
+  async limitarVideo(sender) {
     try {
       const parametros = sender.getParameters();
       if (!parametros.encodings?.length) return;
-      parametros.encodings[0].maxBitrate = this.bitrateAtual(q);
-      parametros.encodings[0].maxFramerate = q.fps;
+      parametros.encodings[0].maxBitrate = this.bitrateAtual();
+      parametros.encodings[0].maxFramerate = this.qualidadeAtual.fps;
+      parametros.encodings[0].scaleResolutionDownBy = this.reducaoAtual();
       await sender.setParameters(parametros);
     } catch {
       // ainda não negociou: o limite é aplicado na próxima vez
@@ -271,6 +310,7 @@ export class MalhaP2P {
         if (par.pc.signalingState !== 'closed') transceptor.direction = 'inactive';
       }
     }
+    clearInterval(this.timerMedicao);
     this.transmissao.stream.getTracks().forEach((t) => t.stop());
     this.transmissao = null;
     this.ultimoVendo = undefined; // a próxima transmissão recalcula o bitrate
@@ -287,16 +327,115 @@ export class MalhaP2P {
     const vendo = this.quantosVendo();
     if (vendo !== this.ultimoVendo) {
       this.ultimoVendo = vendo;
-      const q = QUALIDADES[this.transmissao.qualidade] ?? QUALIDADES.equilibrado;
-      for (const par of this.pares.values()) {
-        if (par.transceptores.video) this.limitarVideo(par.transceptores.video.sender, q);
-      }
+      this.aplicarLimitesATodos();
     }
     // Manda os ids de quem está vendo (o app mostra os nomes)
     this.emitir(
       'espectadores',
       [...this.pares.values()].filter((p) => !p.ocultoPeloOutro).map((p) => p.id)
     );
+  }
+
+  aplicarLimitesATodos() {
+    for (const par of this.pares.values()) {
+      if (par.transceptores.video) this.limitarVideo(par.transceptores.video.sender);
+    }
+  }
+
+  // =====================================================
+  // Medição do envio (a cada 2s) e qualidade Automática
+  // =====================================================
+  iniciarMedicao() {
+    clearInterval(this.timerMedicao);
+    this.timerMedicao = setInterval(() => this.medirETalvezAjustar().catch(() => {}), 2000);
+  }
+
+  // Lê as estatísticas de todas as cópias que estou enviando e junta o "pior caso".
+  //
+  // Cuidado: o Chrome diz qualityLimitationReason = 'bandwidth' também quando o limite
+  // é o NOSSO teto de bitrate (ele reduz a resolução pra caber). Por isso, "internet no
+  // limite" só conta quando a banda disponível medida pelo WebRTC
+  // (availableOutgoingBitrate) é menor que o que estamos tentando enviar.
+  async medirEnvio() {
+    const amostra = { limitado: 'none', perda: 0, rtt: 0, fps: 0, largura: 0, altura: 0, enviando: 0 };
+    const alvo = this.bitrateAtual();
+
+    for (const par of this.pares.values()) {
+      const transceptor = par.transceptores.video;
+      if (!transceptor?.sender.track || par.pc.connectionState !== 'connected') continue;
+
+      const stats = await transceptor.sender.getStats();
+      let motivoChrome = 'none';
+      let bandaDisponivel = null;
+      stats.forEach((r) => {
+        if (r.type === 'outbound-rtp') {
+          amostra.enviando++;
+          motivoChrome = r.qualityLimitationReason || 'none';
+          amostra.fps = Math.max(amostra.fps, r.framesPerSecond || 0);
+          amostra.largura = Math.max(amostra.largura, r.frameWidth || 0);
+          amostra.altura = Math.max(amostra.altura, r.frameHeight || 0);
+        }
+        if (r.type === 'remote-inbound-rtp') {
+          amostra.perda = Math.max(amostra.perda, r.fractionLost || 0);
+          amostra.rtt = Math.max(amostra.rtt, r.roundTripTime || 0);
+        }
+        if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded' && r.availableOutgoingBitrate) {
+          bandaDisponivel = r.availableOutgoingBitrate;
+        }
+      });
+
+      // CPU: o Chrome é confiável aqui
+      if (motivoChrome === 'cpu') amostra.limitado = 'cpu';
+      // Internet: a banda disponível não chega a 80% do que queremos enviar
+      const semBanda = bandaDisponivel !== null ? bandaDisponivel < alvo * 0.8 : motivoChrome === 'bandwidth';
+      if (semBanda && amostra.limitado === 'none') amostra.limitado = 'bandwidth';
+    }
+    return amostra;
+  }
+
+  async medirETalvezAjustar() {
+    const t = this.transmissao;
+    if (!t) return;
+    const amostra = await this.medirEnvio();
+    if (this.transmissao !== t) return; // parou enquanto media
+
+    const captura = t.stream.getVideoTracks()[0]?.getSettings() ?? {};
+    this.emitir('envio', {
+      ...amostra,
+      nivel: t.nivel,
+      automatico: t.automatico,
+      captura: { largura: captura.width, altura: captura.height, fps: captura.frameRate },
+    });
+
+    // Ninguém recebendo, ou ainda aquecendo: não decide nada
+    if (!amostra.enviando) return void (t.amostras = []);
+    if (t.ignorarAmostras > 0) return void t.ignorarAmostras--;
+
+    t.amostras.push(amostra);
+    if (t.amostras.length > 20) t.amostras.shift();
+
+    if (t.automatico) {
+      const novo = decidirNivel(t.nivel, t.amostras);
+      if (novo !== t.nivel) this.mudarNivel(novo);
+      return;
+    }
+
+    // Manual: avisa (no máximo 1 vez por minuto) se o PC/internet não está dando conta
+    const ruins = t.amostras.slice(-3);
+    if (ruins.length === 3 && ruins.every(amostraRuim) && Date.now() - t.ultimoAvisoLimite > 60_000) {
+      t.ultimoAvisoLimite = Date.now();
+      this.emitir('limite', { nivel: t.nivel, motivo: amostra.limitado });
+    }
+  }
+
+  mudarNivel(nivel) {
+    const t = this.transmissao;
+    if (!t || !QUALIDADES[nivel]) return;
+    t.nivel = nivel;
+    t.amostras = [];
+    t.ignorarAmostras = 2; // espera estabilizar antes de decidir de novo
+    this.aplicarLimitesATodos();
+    this.emitir('nivel', { nivel, automatico: t.automatico });
   }
 
   // =====================================================

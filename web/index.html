@@ -137,11 +137,16 @@
       <label>
         Qualidade
         <select id="select-qualidade">
+          <option value="automatica" selected>🔄 Automática (recomendado)</option>
+          <option value="minima">Mínima (480p, 10 fps)</option>
           <option value="economia">Economia (720p, 10 fps)</option>
-          <option value="equilibrado" selected>Equilibrado (1080p, 15 fps)</option>
+          <option value="equilibrado">Equilibrado (1080p, 15 fps)</option>
           <option value="fluido">Fluido (1080p, 30 fps)</option>
+          <option value="ultra">Ultra (4K, até 120 fps)</option>
         </select>
       </label>
+      <!-- Qualidade em uso agora (muda sozinha na Automática) -->
+      <span id="info-qualidade" class="info" hidden></span>
       <label class="checkbox">
         <input id="check-audio" type="checkbox">
         Compartilhar áudio
@@ -156,6 +161,12 @@
       </details>
       <span id="info-espectadores" class="info"></span>
     </section>
+    <!-- Aparece quando "Ultra" é escolhida -->
+    <p id="aviso-ultra" class="dica aviso-ultra" hidden>
+      ⚠️ <strong>Ultra</strong> só chega a 4K/120 fps se a sua tela for 4K de 120 Hz. Pesa muito: precisa de um PC forte
+      e de uns 20 Mbps de upload <strong>por pessoa assistindo</strong>. Melhor com 1 ou 2 pessoas e codec H264 (em Avançado).
+      Se travar, use a Automática.
+    </p>
     <p id="dica-transmitir" class="dica">💡 Você pode transmitir a sua tela e assistir as dos outros ao mesmo tempo, com um usuário só.</p>
 
     <p id="aviso-sala" class="aviso" hidden></p>
@@ -188,6 +199,28 @@
       </aside>
     </div>
   </div>
+
+  <!-- =================================================
+       Confirmação do Ultra (4K a 120 fps)
+       ================================================= -->
+  <dialog id="dialogo-ultra" class="dialogo">
+    <form method="dialog">
+      <h2>Transmitir em Ultra (4K, 120 fps)?</h2>
+      <p>Essa é a qualidade mais pesada. Ela só funciona bem se:</p>
+      <ul>
+        <li>🖥️ a sua tela for <strong>4K com 120 Hz</strong> (senão, o navegador manda o máximo que a tela tiver);</li>
+        <li>💪 o seu PC for <strong>forte</strong>: ele codifica 4K uma vez <strong>pra cada pessoa</strong> assistindo;</li>
+        <li>🌐 a sua internet tiver uns <strong>20 Mbps de upload por pessoa</strong> (3 pessoas ≈ 60 Mbps);</li>
+        <li>👥 tiver <strong>poucas pessoas</strong> assistindo (1 ou 2 é o ideal).</li>
+      </ul>
+      <p class="info">Se não for o seu caso, a imagem vai travar pra quem assiste. A <strong>Automática</strong> evita isso sozinha.</p>
+      <div class="dialogo-botoes">
+        <button value="cancelar" class="botao">Cancelar</button>
+        <button value="automatica" class="botao">Usar a Automática</button>
+        <button value="confirmar" class="botao principal">Sim, transmitir em Ultra</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="./config.js"></script>
   <script type="module" src="./src/app.js"></script>

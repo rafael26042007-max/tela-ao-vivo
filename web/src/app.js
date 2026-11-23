@@ -3,7 +3,7 @@
 // Fluxo: acordar servidor -> início (criar/entrar) -> sala
 // =====================================================
 import { Sinalizacao } from './conexao.js';
-import { MalhaP2P, QUALIDADES, codecsDisponiveis } from './p2p.js';
+import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, codecsDisponiveis } from './p2p.js';
 
 // =====================================================
 // Endereço do servidor (vem do config.js)
@@ -44,6 +44,8 @@ const el = {
   botaoTrancar: $('botao-trancar'),
   botaoSair: $('botao-sair'),
   selectQualidade: $('select-qualidade'),
+  infoQualidade: $('info-qualidade'),
+  avisoUltra: $('aviso-ultra'),
   selectCodec: $('select-codec'),
   checkAudio: $('check-audio'),
   botaoTransmitir: $('botao-transmitir'),
@@ -686,6 +688,33 @@ function registrarEventosMalha(malha) {
     );
   });
 
+  // A cada 2s: qualidade em uso + o que está saindo de verdade
+  malha.on('envio', (dados) => {
+    const nome = QUALIDADES[dados.nivel]?.nome ?? dados.nivel;
+    el.infoQualidade.textContent = dados.automatico ? `🔄 Automática · agora: ${nome}` : `Qualidade: ${nome}`;
+    el.infoQualidade.hidden = false;
+    if (!estado.minhaTela) return;
+    const { captura } = dados;
+    estado.minhaTela.tecnico.textContent = dados.enviando
+      ? `Enviando ${dados.largura}×${dados.altura} · ${Math.round(dados.fps)} fps` +
+        (dados.limitado !== 'none' ? ` · limitado por ${dados.limitado === 'cpu' ? 'CPU' : 'internet'}` : '')
+      : `Capturando ${captura.largura ?? '?'}×${captura.altura ?? '?'} · até ${Math.round(captura.fps ?? 0)} fps`;
+  });
+
+  // Automática mudou de degrau
+  malha.on('nivel', ({ nivel }) => {
+    el.infoQualidade.textContent = `🔄 Automática · agora: ${QUALIDADES[nivel]?.nome ?? nivel}`;
+  });
+
+  // Qualidade manual pesada demais pro PC/internet
+  malha.on('limite', ({ nivel, motivo }) => {
+    const quem = motivo === 'cpu' ? 'O seu PC' : 'A sua internet';
+    mostrarAviso(
+      `${quem} não está dando conta da qualidade ${QUALIDADES[nivel]?.nome ?? nivel}: a imagem pode travar pra quem assiste. ` +
+        'Pare a transmissão e escolha "Automática" ou uma qualidade menor.'
+    );
+  });
+
   malha.on('espectadores', (ids) => {
     estado.espectadores = ids;
     atualizarInfoEspectadores();
@@ -721,11 +750,18 @@ function prepararControles() {
   const codecSalvo = ler('codec');
   if (codecSalvo && [...el.selectCodec.options].some((o) => o.value === codecSalvo)) el.selectCodec.value = codecSalvo;
 
-  const qualidadeSalva = ler('qualidade');
-  if (qualidadeSalva && QUALIDADES[qualidadeSalva]) el.selectQualidade.value = qualidadeSalva;
+  // Chave nova: quem tinha salvo uma qualidade antes passa a começar na Automática
+  const qualidadeSalva = ler('qualidade-v2');
+  if (qualidadeSalva && [...el.selectQualidade.options].some((o) => o.value === qualidadeSalva)) {
+    el.selectQualidade.value = qualidadeSalva;
+  }
+  el.avisoUltra.hidden = el.selectQualidade.value !== 'ultra';
 
   el.selectCodec.addEventListener('change', () => guardar('codec', el.selectCodec.value));
-  el.selectQualidade.addEventListener('change', () => guardar('qualidade', el.selectQualidade.value));
+  el.selectQualidade.addEventListener('change', () => {
+    guardar('qualidade-v2', el.selectQualidade.value);
+    el.avisoUltra.hidden = el.selectQualidade.value !== 'ultra';
+  });
 
   // ---------- Dá pra transmitir daqui? ----------
   // Celular (Android/iPhone) não tem compartilhamento de tela no navegador.
@@ -744,13 +780,38 @@ function prepararControles() {
 
 el.botaoTransmitir.addEventListener('click', () => {
   if (estado.mudandoTransmissao) return;
-  estado.malha.transmitindo ? pararTransmissao() : comecarTransmissao();
+  if (estado.malha.transmitindo) return pararTransmissao();
+  // Ultra (4K/120) é pesado: pergunta antes se a pessoa tem certeza
+  if (el.selectQualidade.value === 'ultra') return confirmarUltra();
+  comecarTransmissao();
+});
+
+// -----------------------------------------------------
+// Janela "tem certeza?" do Ultra
+// O clique no botão da janela já conta como gesto do usuário,
+// então o navegador deixa abrir a escolha de tela logo em seguida
+// -----------------------------------------------------
+const dialogoUltra = $('dialogo-ultra');
+function confirmarUltra() {
+  if (!dialogoUltra.showModal) return comecarTransmissao(); // navegador muito antigo: segue direto
+  dialogoUltra.returnValue = '';
+  dialogoUltra.showModal();
+}
+dialogoUltra.addEventListener('close', () => {
+  if (dialogoUltra.returnValue === 'confirmar') return comecarTransmissao();
+  if (dialogoUltra.returnValue === 'automatica') {
+    el.selectQualidade.value = 'automatica';
+    el.selectQualidade.dispatchEvent(new Event('change')); // salva a escolha e esconde o aviso
+    return comecarTransmissao();
+  }
+  // Cancelar (ou Esc): não faz nada
 });
 
 // ---------- Começar ----------
 async function comecarTransmissao() {
   const qualidade = el.selectQualidade.value;
-  const q = QUALIDADES[qualidade];
+  // Automática: captura em 1080p/30 e o encoder ajusta pra baixo quando precisar
+  const q = QUALIDADES[qualidade === 'automatica' ? CAPTURA_AUTOMATICA : qualidade] ?? QUALIDADES.equilibrado;
   const comAudio = el.checkAudio.checked;
   estado.mudandoTransmissao = true;
 
@@ -815,7 +876,10 @@ function atualizarBotaoTransmitir(transmitindo) {
   el.selectQualidade.disabled = transmitindo;
   el.selectCodec.disabled = transmitindo;
   el.checkAudio.disabled = transmitindo;
-  if (!transmitindo) el.infoEspectadores.textContent = '';
+  if (!transmitindo) {
+    el.infoEspectadores.textContent = '';
+    el.infoQualidade.hidden = true;
+  }
   const eu = estado.pessoas.get(estado.meuId);
   if (eu) eu.transmitindo = transmitindo;
   renderizarPessoas();
@@ -975,9 +1039,11 @@ function criarTileMeu(stream) {
   const botaoDestaque = criarBotaoDestaque(estado.meuId);
   acoes.append(status, botaoDestaque);
   barra.append(titulo, acoes);
-  tile.append(video, barra);
+  // Ex: "Enviando 1920×1080 · 15 fps" (o que sai de verdade, não só o que foi pedido)
+  const tecnico = criar('div', 'tecnico', 'Medindo...');
+  tile.append(video, tecnico, barra);
   el.grade.prepend(tile);
-  return { tile, status, botaoDestaque };
+  return { tile, status, botaoDestaque, tecnico };
 }
 
 function atualizarVazio() {
