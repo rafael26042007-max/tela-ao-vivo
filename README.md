@@ -1,7 +1,8 @@
 # 🔴 Tela ao Vivo
 
-Site para transmitir a tela ao vivo, com **salas e código de entrada**, pra até **12 pessoas** por sala (quem cria escolhe o limite).
-O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe o vídeo.
+Site para transmitir a tela (e a câmera) ao vivo, com **salas e código de entrada**, pra até **12 pessoas** por sala
+(quem cria escolhe o limite). O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe o vídeo,
+e nada é gravado. Grátis, sem instalar nada, e a conta é **opcional**.
 
 🌐 **Site:** https://rafael26042007-max.github.io/tela-ao-vivo/
 
@@ -24,7 +25,9 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 - A prévia mostra **o que está saindo de verdade** (ex: "Enviando 1920×1080 · 15 fps · limitado por internet")
 - **Áudio** da aba/sistema (opcional); codec em "Avançado"
 - **📌 Tela em destaque**: uma tela grande e as outras numa coluna ao lado
-- **Volume por tela**, **tela cheia** e **Ocultar** (quem transmite para de enviar o vídeo pra você)
+- **Volume por tela**, **tela cheia** (com a barra de volume e Ocultar junto) e **Ocultar** (quem transmite para de
+  enviar o vídeo pra você)
+- Com **3 ou 4 telas num monitor grande**, a grade fica em 2 colunas pra cada tela aparecer maior
 - **Quem está assistindo**: quem transmite vê os nomes ("👁 2 assistindo: Ana, Beto")
 - **📷 Câmera** pra todo mundo, **inclusive no celular** (que não consegue transmitir a tela). Separada da tela:
   dá pra transmitir as duas ao mesmo tempo. Leve de propósito (360p, 15 fps, ~500 kbps por pessoa), sem som
@@ -37,6 +40,18 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 - **Servidor atualizou/reiniciou?** As salas são **recriadas sozinhas** (mesmo código, senha e dono) e o vídeo nem para
 - **💬 Feedback**: botão na tela inicial e na sala; a opinião chega num canal do Discord (ver "Feedback" em Publicando)
 
+**Conta (opcional)**
+- **Entrar com Discord**: sem senha nova, e o Discord só entrega o perfil básico (**sem e-mail**)
+- Antes de criar a conta, a pessoa **aceita a Política de Privacidade** (fica guardado quando e qual versão)
+- **Minha conta**: corrigir o nome, **baixar meus dados** (arquivo JSON) e **apagar a conta** na hora
+- Sem conta, tudo continua funcionando igual
+- Benefícios previstos pra quem tem conta: sala fixa (mesmo código sempre), nome reservado e preferências em qualquer PC
+
+**Privacidade (LGPD)**
+- Página [Privacidade](https://rafael26042007-max.github.io/tela-ao-vivo/privacidade.html) em português claro:
+  o que é tratado com e sem conta, pra quê, onde fica, por quanto tempo e como apagar
+- Banco de dados no **Brasil** (Neon, São Paulo), guardando só o mínimo
+
 ## Como funciona
 
 ```
@@ -44,6 +59,8 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
  Render       ──► servidor de sinalização: salas, códigos, senha, chat
                   e as mensagens pros navegadores se "acharem"
  Navegadores  ──► o vídeo vai DIRETO de um pro outro (WebRTC P2P)
+ Neon         ──► banco das contas opcionais (São Paulo)        ┐ opcionais: sem eles,
+ Discord      ──► login das contas e canal do feedback           ┘ o site funciona igual
 
       Ana ◄────────► Beto
        ▲  ╲        ╱  ▲
@@ -56,7 +73,9 @@ O vídeo vai **direto de um navegador pro outro (P2P)**: nenhum servidor recebe 
 |---|---|---|
 | Site | GitHub Pages | Nada |
 | Sinalização | Render (grátis) | Quase nada: só mensagens de texto |
-| Vídeo | Direto entre os PCs | A internet e a CPU de quem transmite |
+| Vídeo e câmera | Direto entre os PCs | A internet e a CPU de quem transmite |
+| Contas | Neon (grátis, 1 GB) | Quase nada: algumas linhas por conta |
+| Login e feedback | Discord | Nada |
 
 **Importante:** em P2P, quem transmite manda **uma cópia pra cada pessoa** (com 8 na sala, são 7 cópias).
 Por isso o **bitrate se ajusta sozinho**: até 3 espectadores cada um recebe a qualidade escolhida; com mais gente,
@@ -114,6 +133,12 @@ Nas qualidades manuais, o site **avisa** quando o PC ou a internet não estão d
 | HTML malicioso | Tudo é exibido como texto (`textContent`) |
 | Bilhete falsificado | O bilhete de volta é criptografado (AES-256-GCM) com a chave `SEGREDO`: não dá pra ler nem alterar |
 | Pessoa removida voltando | Quem o dono removeu não consegue voltar com o bilhete |
+| Spam no feedback | 3 a cada 10 min por IP, até 1000 caracteres, sem `@everyone`; o webhook fica só no servidor |
+| Login forjado | `state` aleatório guardado no servidor **e** num cookie do navegador; cada um vale uma vez só |
+| Login como redirecionador de golpe | O login só devolve a pessoa pra sites de `ORIGENS_PERMITIDAS` |
+| Sessão falsificada | Assinada (HMAC-SHA256 com `SEGREDO`), comparação em tempo constante, vale 30 dias, morre se a conta for apagada |
+| Vazamento de dados | Não guardamos e-mail, senha, IP nem o token do Discord; banco com SSL `verify-full` e channel binding |
+| Segredos | Webhook, `DATABASE_URL` e `DISCORD_CLIENT_SECRET` só nas variáveis do Render, nunca no site ou no GitHub |
 
 ## Como a sala sobrevive ao F5 e às atualizações
 
@@ -140,7 +165,8 @@ server/                 # vai pro Render
 ├── feedback.js         # confere o feedback e repassa pro webhook do Discord
 ├── banco.js            # PostgreSQL (contas opcionais): conta, exportar, apagar, limpar inativas
 ├── login.js            # login com Discord (OAuth2) e sessão assinada
-├── migracoes/          # estrutura do banco em SQL (aplicada sozinha ao iniciar)
+├── migracoes/          # estrutura do banco em SQL, aplicada sozinha ao iniciar
+│   └── 001_contas.sql  # usuarios, salas_fixas, preferencias (só o mínimo)
 ├── certificado.js      # HTTPS autoassinado (só pra testar na rede local)
 └── config.js           # configurações
 web/                    # vai pro GitHub Pages (não precisa compilar)
@@ -156,7 +182,7 @@ web/                    # vai pro GitHub Pages (não precisa compilar)
     ├── conta.js        # "Entrar com Discord" e "Minha conta" (corrigir, baixar, apagar)
     └── conexao.js      # WebSocket com reconexão automática
 render.yaml             # configuração do Render
-.github/workflows/pages.yml  # publica web/ no GitHub Pages
+.github/workflows/pages.yml  # publica web/ no GitHub Pages (empacotar → publicar)
 ```
 
 ---
@@ -178,6 +204,10 @@ Abra **http://localhost:3000**. No seu PC, o mesmo servidor entrega o site e faz
 
 Modo desenvolvimento (reinicia o servidor ao salvar): `npm run dev`
 
+O feedback, o banco e o login são **opcionais**: sem as variáveis (tabela abaixo), eles só ficam escondidos.
+Pra testar as contas no seu PC, rode um PostgreSQL e use `DATABASE_URL=postgres://usuario@localhost:5432/banco`
+(conexões com `localhost` não usam SSL).
+
 ---
 
 ## Publicando
@@ -196,7 +226,26 @@ Modo desenvolvimento (reinicia o servidor ao salvar): `npm run dev`
 ### Limites do plano grátis do Render
 - Ele **dorme depois de 15 min sem uso** e leva **até ~1 min pra acordar**. O site mostra "Acordando o servidor..." enquanto isso.
 - Enquanto alguém está numa sala, o site manda um sinal a cada 4 min pra ele não dormir.
-- Quando ele dorme, as salas abertas somem (ficam só na memória).
+- Quando ele dorme ou reinicia, as salas saem da memória, mas quem estava nelas **recria a sala sozinho** com o
+  bilhete (ver "Como a sala sobrevive ao F5"). Salas vazias somem de verdade depois de 30 min.
+
+### Variáveis do Render (Environment)
+
+| Variável | Pra quê | Como |
+|---|---|---|
+| `SEGREDO` | Chave dos bilhetes e das sessões | O Render gera sozinho (`render.yaml`) |
+| `ORIGENS_PERMITIDAS` | Sites que podem usar o servidor | `render.yaml` (o GitHub Pages) |
+| `CONFIAR_PROXY` | IP real do visitante atrás do Render | `render.yaml` (`true`) |
+| `MAX_PESSOAS`, `MAX_TRANSMISSOES` | Limite padrão de pessoas e de telas por sala | `render.yaml` (8 e 4) |
+| `MAX_LIMITE_PESSOAS` | Maior limite que o dono pode escolher | Opcional (padrão 12) |
+| `FEEDBACK_WEBHOOK` | Feedback no Discord | 🔒 Painel do Render (ver abaixo) |
+| `DATABASE_URL` | Banco das contas | 🔒 Painel do Render (ver abaixo) |
+| `MESES_INATIVIDADE` | Apagar contas sem uso | Opcional (padrão 12) |
+| `DISCORD_CLIENT_ID` | App do login | `render.yaml` (público) |
+| `DISCORD_CLIENT_SECRET` | Senha do app do login | 🔒 Painel do Render (ver abaixo) |
+| `CLOUDFLARE_TURN_ID` / `_TOKEN`, `METERED_CHAVE`, `TURN_*` | TURN | Opcional (ver o fim) |
+
+🔒 = segredo: **só no painel do Render**, nunca no site, no `render.yaml` nem no GitHub.
 
 ### Feedback → Discord
 1. No Discord, crie um canal (de preferência **privado, só seu**) e deixe a notificação em "Todas as mensagens"
@@ -208,12 +257,15 @@ a senha do canal): o site manda pro servidor, que confere, limita (3 a cada 10 m
 e repassa. Ninguém consegue usar `@everyone` pelo feedback.
 
 ### Banco de dados → Neon (contas opcionais)
-O site funciona sem banco. Com ele, passam a existir as contas (login com Discord, ainda em construção).
+O site funciona sem banco. Com ele (e com o login abaixo), passam a existir as contas.
 1. Em [neon.com](https://neon.com), crie um projeto **na região São Paulo (`aws-sa-east-1`)**: os dados ficam no Brasil
-2. Copie a **connection string** (`postgresql://...?sslmode=require`)
+2. Em **Connect**, **desligue "Connection pooling"** (o endereço não pode ter `-pooler`: a trava que impede dois
+   servidores de criarem as tabelas ao mesmo tempo não funciona com pooling) e copie a **connection string**
 3. No Render (**Environment**), adicione `DATABASE_URL` com ela. **Nunca coloque no site nem no GitHub**
 
 Ao iniciar, o servidor cria as tabelas sozinho (`server/migracoes/`). Se o banco cair, o site continua, só sem contas.
+O `sslmode` é forçado pra `verify-full` no código (criptografa **e** confere o certificado do Neon) e o channel
+binding fica ligado. Confira em `/saude`: `"contas": true`.
 
 **LGPD** (detalhes em `web/privacidade.html`):
 - Guarda só o mínimo: número do perfil do Discord, nome, código da foto, sala fixa, preferências e o aceite da política.
@@ -228,6 +280,7 @@ Precisa do banco (acima) e de um app no [Discord Developer Portal](https://disco
 1. App **Tela ao Vivo** → **OAuth2** → **Redirects**: `https://tela-ao-vivo-27wj.onrender.com/auth/discord/retorno`
 2. No Render (**Environment**): `DISCORD_CLIENT_ID` (público, já está no `render.yaml`) e `DISCORD_CLIENT_SECRET`
    (**Redefinir segredo** no Discord; nunca no site nem no GitHub)
+3. Confira em `/saude`: `"login": true`. Aí aparece **"Entrar com Discord (opcional)"** embaixo do campo do nome
 
 Como funciona (`server/login.js`): o site manda a pessoa pro servidor, que manda pro Discord pedindo **só o escopo
 `identify`** (sem e-mail). Na volta, o servidor confere o `state` (memória + cookie, contra login forjado), troca o
