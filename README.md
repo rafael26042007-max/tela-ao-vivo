@@ -76,6 +76,12 @@ WebRTC (`getStats`) de cada cópia que envia:
   `availableOutgoingBitrate`, não chega a 80% do que está sendo enviado), **perda de pacotes acima de 5%** ou
   **atraso acima de 500 ms** → depois de ~6 s assim, **desce** um degrau (Fluido → Equilibrado → Economia → Mínima)
 - **Tudo bem por ~20 s** → **sobe** um degrau (devagar, pra não ficar indo e voltando)
+- **Cada pessoa tem o seu degrau**: a CPU é do PC de quem transmite, então ela vale como um **teto** pra
+  todos; já a internet é medida **por pessoa**. Se só a Ana tem internet ruim, só a cópia da Ana desce (a tela
+  mostra "Ana em Mínima (internet lenta)") e o resto continua na qualidade boa
+- Quem perde a conexão (internet caiu, aba travou) para de contar como "assistindo" em poucos segundos e
+  devolve a parte do bitrate pros outros
+- Se a janela compartilhada muda de tamanho, a redução de resolução é recalculada
 - Ela captura em 1080p/30 e só muda os limites do encoder (`setParameters`: bitrate, FPS e
   `scaleResolutionDownBy`), então **ninguém precisa escolher a tela de novo** e quem assiste não perde a imagem
 

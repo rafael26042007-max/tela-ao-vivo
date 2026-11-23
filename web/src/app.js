@@ -692,8 +692,7 @@ function registrarEventosMalha(malha) {
 
   // A cada 2s: qualidade em uso + o que está saindo de verdade
   malha.on('envio', (dados) => {
-    const nome = QUALIDADES[dados.nivel]?.nome ?? dados.nivel;
-    el.infoQualidade.textContent = dados.automatico ? `🔄 Automática · agora: ${nome}` : `Qualidade: ${nome}`;
+    el.infoQualidade.textContent = textoQualidade(dados);
     el.infoQualidade.hidden = false;
     if (!estado.minhaTela) return;
     const { captura } = dados;
@@ -704,8 +703,8 @@ function registrarEventosMalha(malha) {
   });
 
   // Automática mudou de degrau
-  malha.on('nivel', ({ nivel }) => {
-    el.infoQualidade.textContent = `🔄 Automática · agora: ${QUALIDADES[nivel]?.nome ?? nivel}`;
+  malha.on('nivel', (dados) => {
+    el.infoQualidade.textContent = textoQualidade(dados);
   });
 
   // Qualidade manual pesada demais pro PC/internet
@@ -721,6 +720,28 @@ function registrarEventosMalha(malha) {
     estado.espectadores = ids;
     atualizarInfoEspectadores();
   });
+}
+
+// -----------------------------------------------------
+// Texto da qualidade de quem transmite
+// Na Automática cada pessoa tem o seu degrau: mostra o de quase todos e
+// avisa quem está recebendo menos por causa da internet dela
+//   ex.: "🔄 Automática · agora: Equilibrado · Ana em Mínima (internet dela)"
+// -----------------------------------------------------
+function textoQualidade({ nivel, automatico, niveis = [] }) {
+  const nomeNivel = (n) => QUALIDADES[n]?.nome ?? n;
+  if (!automatico) return `Qualidade: ${nomeNivel(nivel)}`;
+  if (!niveis.length) return `🔄 Automática · agora: ${nomeNivel(nivel)}`;
+
+  // O degrau mais alto é o "principal" (o que o PC aguenta);
+  // quem está abaixo dele é porque a internet DAQUELA pessoa não deu conta
+  const ordem = ['minima', 'economia', 'equilibrado', 'fluido'];
+  const principal = niveis.map((p) => p.nivel).sort((a, b) => ordem.indexOf(b) - ordem.indexOf(a))[0];
+  const abaixo = niveis.filter((p) => p.nivel !== principal);
+  let texto = `🔄 Automática · agora: ${nomeNivel(principal)}`;
+  if (abaixo.length === 1) texto += ` · ${nomeDe(abaixo[0].id)} em ${nomeNivel(abaixo[0].nivel)} (internet lenta)`;
+  else if (abaixo.length > 1) texto += ` · ${abaixo.length} pessoas em qualidade menor (internet lenta)`;
+  return texto;
 }
 
 function removerPessoa(id) {
@@ -877,7 +898,8 @@ async function comecarTransmissao() {
     estado.malha.transmitir(stream, { qualidade, codec: el.selectCodec.value });
 
     // Clicou em "Parar compartilhamento" na barra do navegador
-    stream.getVideoTracks()[0].addEventListener('ended', () => pararTransmissao());
+    const trilha = stream.getVideoTracks()[0];
+    trilha.addEventListener('ended', () => pararTransmissao());
 
     estado.minhaTela = criarTileMeu(stream);
     if (comAudio && stream.getAudioTracks().length === 0) {
@@ -885,6 +907,14 @@ async function comecarTransmissao() {
     }
     atualizarBotaoTransmitir(true);
     estado.malha.atualizarEspectadores();
+
+    // Parou o compartilhamento ENQUANTO o servidor respondia: o 'ended' já tinha
+    // disparado antes de existir o listener, então ninguém ficou sabendo.
+    // Desfaz agora (senão o botão fica "Parar" e todo mundo vê uma tela morta)
+    if (trilha.readyState === 'ended') {
+      estado.mudandoTransmissao = false;
+      await pararTransmissao();
+    }
   } catch (erro) {
     stream.getTracks().forEach((t) => t.stop());
     estado.malha.pararTransmissao();
