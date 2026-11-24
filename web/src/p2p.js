@@ -553,6 +553,26 @@ export class MalhaP2P {
     }
   }
 
+  // O que estou RECEBENDO de cada pessoa (maior vídeo: tela ou câmera).
+  // Usado pelo fiscal do "4K só com conta" (ver app.js)
+  async medirRecebido() {
+    const resultado = new Map();
+    for (const par of this.pares.values()) {
+      if (par.pc.connectionState !== 'connected') continue;
+      const stats = await par.pc.getStats();
+      let altura = 0;
+      let fps = 0;
+      stats.forEach((r) => {
+        if (r.type === 'inbound-rtp' && r.kind === 'video') {
+          altura = Math.max(altura, r.frameHeight || 0);
+          fps = Math.max(fps, r.framesPerSecond || 0);
+        }
+      });
+      if (altura) resultado.set(par.id, { altura, fps });
+    }
+    return resultado;
+  }
+
   // Degrau de cada pessoa que está vendo: [{ id, nivel }]
   niveisPorPessoa() {
     return this.paresVendo().map((par) => ({ id: par.id, nivel: this.nivelDoPar(par) }));

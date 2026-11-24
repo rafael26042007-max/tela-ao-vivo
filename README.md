@@ -45,7 +45,12 @@ e nada é gravado. Grátis, sem instalar nada, e a conta é **opcional**.
 - Antes de criar a conta, a pessoa **aceita a Política de Privacidade** (fica guardado quando e qual versão)
 - **Minha conta**: corrigir o nome, **baixar meus dados** (arquivo JSON) e **apagar a conta** na hora
 - Sem conta, tudo continua funcionando igual
-- Benefícios previstos pra quem tem conta: sala fixa (mesmo código sempre), nome reservado e preferências em qualquer PC
+- **Benefícios de quem tem conta:**
+  - **Sala fixa**: escolha um código de 6 letras/números (ex: `RAFAEL`) em "Minha conta"; ninguém mais pega ele. O dono
+    da conta sempre entra como dono 👑 dessa sala, de qualquer PC
+  - **✔ e foto do Discord** na lista de pessoas. O nome é o da conta (travado)
+  - **Nome reservado**: quem entra sem conta com o nome de uma conta aparece como "Rafael (convidado)", sem ✔
+  - **Ultra (4K, até 120 fps)** só com conta (ver "4K só com conta" abaixo)
 
 **Privacidade (LGPD)**
 - Página [Privacidade](https://rafael26042007-max.github.io/tela-ao-vivo/privacidade.html) em português claro:
@@ -113,6 +118,20 @@ WebRTC (`getStats`) de cada cópia que envia:
 
 Nas qualidades manuais, o site **avisa** quando o PC ou a internet não estão dando conta ("a imagem pode travar").
 
+### 4K só com conta (3 camadas)
+
+No P2P quem transmite controla o próprio navegador, então um bloqueio só no site dá pra burlar pelo F12. Por isso:
+
+1. **Site**: sem conta, a opção Ultra fica bloqueada ("só com conta")
+2. **Servidor (SDP)**: as descrições de conexão que chegam pra quem **não tem conta** ganham `b=AS:3000` no vídeo.
+   O próprio Chrome de quem transmite obedece o teto de ~3 Mbps (cabe o Fluido; o Ultra precisa de ~20 Mbps)
+3. **Fiscal**: quem **assiste** (com o site normal) mede o vídeo que chega. Acima de 1080p ou 40 fps vindo de alguém
+   sem conta, avisa o servidor, que pede pra baixar pra Fluido. Se continuar depois de 15s e **2 pessoas** confirmarem
+   (ou a única que assiste), a transmissão é encerrada e fica bloqueada por 5 minutos
+
+Só vale quando o login está configurado (sem login, ninguém tem conta, então ninguém é limitado).
+Burlar tudo exigiria modificar o site de quem transmite **e** o de quem assiste.
+
 ### Economia de processamento
 
 - Se alguém **oculta** a sua tela, você **para de codificar e enviar** pra essa pessoa
@@ -136,6 +155,7 @@ Nas qualidades manuais, o site **avisa** quando o PC ou a internet não estão d
 | Spam no feedback | 3 a cada 10 min por IP, até 1000 caracteres, sem `@everyone`; o webhook fica só no servidor |
 | Login forjado | `state` aleatório guardado no servidor **e** num cookie do navegador; cada um vale uma vez só |
 | Login como redirecionador de golpe | O login só devolve a pessoa pra sites de `ORIGENS_PERMITIDAS` |
+| Benefício sem conta | Os benefícios dependem da **sessão assinada**, nunca do nome digitado; 4K protegido em 3 camadas |
 | Sessão falsificada | Assinada (HMAC-SHA256 com `SEGREDO`), comparação em tempo constante, vale 30 dias, morre se a conta for apagada |
 | Vazamento de dados | Não guardamos e-mail, senha, IP nem o token do Discord; banco com SSL `verify-full` e channel binding |
 | Segredos | Webhook, `DATABASE_URL` e `DISCORD_CLIENT_SECRET` só nas variáveis do Render, nunca no site ou no GitHub |
@@ -166,7 +186,8 @@ server/                 # vai pro Render
 ├── banco.js            # PostgreSQL (contas opcionais): conta, exportar, apagar, limpar inativas
 ├── login.js            # login com Discord (OAuth2) e sessão assinada
 ├── migracoes/          # estrutura do banco em SQL, aplicada sozinha ao iniciar
-│   └── 001_contas.sql  # usuarios, salas_fixas, preferencias (só o mínimo)
+│   ├── 001_contas.sql  # usuarios, salas_fixas, preferencias (só o mínimo)
+│   └── 002_nome_reservado.sql
 ├── certificado.js      # HTTPS autoassinado (só pra testar na rede local)
 └── config.js           # configurações
 web/                    # vai pro GitHub Pages (não precisa compilar)
@@ -241,6 +262,7 @@ Pra testar as contas no seu PC, rode um PostgreSQL e use `DATABASE_URL=postgres:
 | `FEEDBACK_WEBHOOK` | Feedback no Discord | 🔒 Painel do Render (ver abaixo) |
 | `DATABASE_URL` | Banco das contas | 🔒 Painel do Render (ver abaixo) |
 | `MESES_INATIVIDADE` | Apagar contas sem uso | Opcional (padrão 12) |
+| `KBPS_SEM_CONTA` | Teto de banda por pessoa de quem transmite sem conta | Opcional (padrão 3000) |
 | `DISCORD_CLIENT_ID` | App do login | `render.yaml` (público) |
 | `DISCORD_CLIENT_SECRET` | Senha do app do login | 🔒 Painel do Render (ver abaixo) |
 | `CLOUDFLARE_TURN_ID` / `_TOKEN`, `METERED_CHAVE`, `TURN_*` | TURN | Opcional (ver o fim) |

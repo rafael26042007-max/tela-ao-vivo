@@ -91,6 +91,10 @@ module.exports = {
   discordAutorizar: process.env.DISCORD_AUTORIZAR || 'https://discord.com/oauth2/authorize',
   discordApi: process.env.DISCORD_API || 'https://discord.com/api/v10',
 
+  // 4K só com conta: teto de banda (kbps) por pessoa pra quem transmite SEM conta.
+  // 3000 cabe o Fluido (1080p/30, 2,5 Mbps) com folga; o Ultra (20 Mbps) não passa.
+  kbpsSemConta: Number(process.env.KBPS_SEM_CONTA || 3000),
+
   // ---------- Feedback ----------
   // Webhook de um canal do Discord. Sem ele, o botão de feedback não aparece no site.
   // Nunca coloque esse endereço no site: ele funciona como uma senha do canal.

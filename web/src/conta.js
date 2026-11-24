@@ -12,8 +12,15 @@ const CHAVE_ACEITE = 'tela-ao-vivo-aceite'; // versão da política já aceita n
 
 let api = null;
 let aoMudarNome = () => {};
+let aoMudarConta = () => {}; // o app atualiza a tela (Ultra, sala fixa, nome travado)
 let versaoTermos = null;
-let conta = null; // { nome, foto } de quem está logado
+let conta = null; // { nome, foto, salaFixa } de quem está logado
+
+// ---------- Pro resto do site ----------
+export const temConta = () => conta !== null;
+export const contaAtual = () => conta;
+// A sessão vai junto ao entrar/voltar numa sala: é assim que o servidor sabe dos benefícios
+export const sessaoAtual = () => (conta ? ler(CHAVE_SESSAO) : null);
 
 const ler = (chave) => { try { return localStorage.getItem(chave); } catch { return null; } };
 const guardar = (chave, valor) => { try { valor === null ? localStorage.removeItem(chave) : localStorage.setItem(chave, valor); } catch { /* ok */ } };
@@ -56,6 +63,7 @@ async function chamar(caminho, opcoes = {}) {
 export function prepararConta(opcoes) {
   api = opcoes.api;
   aoMudarNome = opcoes.aoMudarNome;
+  aoMudarConta = opcoes.aoMudarConta ?? (() => {});
   const erro = lerRetornoDoLogin();
   if (erro) opcoes.mostrarErro(erro);
 
@@ -81,6 +89,7 @@ export function prepararConta(opcoes) {
   // ---------- Minha conta ----------
   $('botao-minha-conta').addEventListener('click', () => {
     $('campo-nome-conta').value = conta?.nome ?? '';
+    $('campo-sala-fixa').value = conta?.salaFixa ?? '';
     status('');
     $('apagar-conta').textContent = 'Apagar minha conta';
     delete $('apagar-conta').dataset.confirmando;
@@ -101,6 +110,25 @@ export function prepararConta(opcoes) {
     } catch (erro) {
       status(erro.message, true);
     }
+  });
+
+  // Benefício: escolher a sala fixa (6 letras/números; vazio = tirar)
+  $('salvar-sala-fixa').addEventListener('click', async () => {
+    try {
+      conta = await chamar('/api/conta/sala-fixa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: $('campo-sala-fixa').value.trim() }),
+      });
+      $('campo-sala-fixa').value = conta.salaFixa ?? '';
+      mostrarConectado();
+      status(conta.salaFixa ? `Pronto: a sua sala fixa é ${conta.salaFixa}.` : 'Sala fixa removida.');
+    } catch (erro) {
+      status(erro.message, true);
+    }
+  });
+  $('campo-sala-fixa').addEventListener('input', (e) => {
+    e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
   });
 
   // Baixar meus dados (LGPD: acesso e portabilidade)
@@ -171,6 +199,7 @@ function sair() {
 }
 
 function mostrarConectado() {
+  aoMudarConta(conta);
   $('conta-desconectado').hidden = true;
   $('conta-conectado').hidden = false;
   $('nome-conta').textContent = conta.nome;
@@ -180,6 +209,7 @@ function mostrarConectado() {
 }
 
 function mostrarDesconectado() {
+  aoMudarConta(null);
   $('conta-desconectado').hidden = false;
   $('conta-conectado').hidden = true;
 }

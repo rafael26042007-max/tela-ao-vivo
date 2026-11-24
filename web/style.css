@@ -452,3 +452,9 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .dialogo a { color: #93c5fd; }
 #status-login:empty, #status-conta:empty { display: none; }
 #status-conta.erro { color: #f87171; }
+
+/* ---------- Benefícios da conta: foto e ✔ na lista de pessoas ---------- */
+.nome-pessoa.com-foto::before { display: none; } /* a foto fica no lugar da bolinha de cor */
+.foto-pessoa { width: 18px; height: 18px; border-radius: 50%; flex: none; }
+.verificado { color: #60a5fa; font-size: 12px; cursor: help; }
+#campo-nome[readonly] { color: var(--texto-fraco); cursor: default; }

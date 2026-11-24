@@ -83,6 +83,11 @@
             <option value="11">11</option><option value="12">12</option>
           </select>
         </label>
+        <!-- Benefício da conta: abrir a sala fixa (só aparece pra quem tem uma) -->
+        <label id="linha-fixa" class="checkbox" hidden>
+          <input id="check-fixa" type="checkbox" checked>
+          Usar a minha sala fixa: <strong id="codigo-fixa"></strong>
+        </label>
         <!-- Senha é opcional: fica escondida até marcar a caixinha -->
         <label class="checkbox">
           <input id="check-senha" type="checkbox">
@@ -311,6 +316,13 @@
         <span class="linha">
           <input id="campo-nome-conta" type="text" maxlength="32" autocomplete="nickname">
           <button id="salvar-nome-conta" value="nome" class="botao" type="button">Salvar</button>
+        </span>
+      </label>
+      <label class="campo">
+        <span>Sala fixa (o mesmo código sempre, 6 letras ou números)</span>
+        <span class="linha">
+          <input id="campo-sala-fixa" type="text" maxlength="6" placeholder="Ex: RAFAEL" autocomplete="off" spellcheck="false">
+          <button id="salvar-sala-fixa" class="botao" type="button">Salvar</button>
         </span>
       </label>
       <div class="acoes-conta">

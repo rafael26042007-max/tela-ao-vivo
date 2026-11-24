@@ -168,7 +168,13 @@ function criarSessao(usuarioId) {
 // Devolve o id da conta, ou null (sessão falsa, vencida, ou conta apagada)
 async function usuarioDaRequisicao(req) {
   const [tipo, sessao] = String(req.headers.authorization ?? '').split(' ');
-  if (tipo !== 'Bearer' || !sessao || !banco.bancoLigado()) return null;
+  if (tipo !== 'Bearer') return null;
+  return usuarioDaSessao(sessao);
+}
+
+// A mesma conferência, pra sessão que chega pelo WebSocket (entrar/voltar na sala)
+async function usuarioDaSessao(sessao) {
+  if (!sessao || typeof sessao !== 'string' || sessao.length > 400 || !banco.bancoLigado()) return null;
   const [corpo, assinatura] = sessao.split('.');
   if (!corpo || !assinatura) return null;
   const esperada = crypto.createHmac('sha256', chaveSessao()).update(corpo).digest();
@@ -209,4 +215,4 @@ function lerCookie(req, nome) {
   return null;
 }
 
-module.exports = { loginLigado, iniciarLogin, concluirLogin, usuarioDaRequisicao, criarSessao };
+module.exports = { loginLigado, iniciarLogin, concluirLogin, usuarioDaRequisicao, usuarioDaSessao, criarSessao };

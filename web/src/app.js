@@ -5,7 +5,7 @@
 import { Sinalizacao } from './conexao.js?v=__VERSAO__';
 import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, CAMERA, codecsDisponiveis } from './p2p.js?v=__VERSAO__';
 import { prepararFeedback, mostrarBotoesFeedback } from './feedback.js?v=__VERSAO__';
-import { prepararConta, mostrarConta } from './conta.js?v=__VERSAO__';
+import { prepararConta, mostrarConta, temConta, contaAtual, sessaoAtual } from './conta.js?v=__VERSAO__';
 
 // =====================================================
 // Endereço do servidor (vem do config.js)
@@ -274,15 +274,40 @@ prepararFeedback({
 // ---------- Conta opcional (login com Discord) ----------
 prepararConta({
   api,
-  // Logado: usa o nome da conta se o campo ainda estiver vazio
+  // Logado: o nome é o da conta (o servidor usa ele de qualquer jeito, por causa do ✔)
   aoMudarNome: (nome) => {
-    if (!el.campoNome.value.trim()) el.campoNome.value = nome;
+    el.campoNome.value = nome;
   },
+  aoMudarConta: aplicarConta,
   mostrarErro: (texto) => {
     el.erroInicio.textContent = texto;
     el.erroInicio.classList.add('destaque');
   },
 });
+
+// -----------------------------------------------------
+// Benefícios da conta na tela
+//   - nome travado (é o da conta; muda em "Minha conta")
+//   - "Usar a minha sala fixa" no Criar sala
+//   - Ultra (4K) só com conta
+// -----------------------------------------------------
+function aplicarConta(conta) {
+  el.campoNome.readOnly = !!conta;
+  el.campoNome.title = conta ? 'É o nome da sua conta. Pra mudar, use "Minha conta".' : '';
+  $('linha-fixa').hidden = !conta?.salaFixa;
+  $('codigo-fixa').textContent = conta?.salaFixa ?? '';
+  aplicarUltraSoComConta();
+}
+
+function aplicarUltraSoComConta() {
+  const ultra = el.selectQualidade.querySelector('option[value="ultra"]');
+  ultra.disabled = !temConta();
+  ultra.textContent = temConta() ? 'Ultra (4K, até 120 fps)' : 'Ultra (4K, até 120 fps) · só com conta';
+  if (!temConta() && el.selectQualidade.value === 'ultra') {
+    el.selectQualidade.value = 'automatica';
+    aplicarQualidadeEscolhida();
+  }
+}
 
 // ---------- Preenche nome salvo e código do link (?sala=ABC123) ----------
 el.campoNome.value = ler('nome') ?? '';
@@ -303,7 +328,7 @@ async function iniciar() {
   const sessao = lerSessao();
   if (sessao?.bilhete && (!codigoDoLink || codigoDoLink === sessao.codigo)) {
     el.statusServidor.textContent = `Voltando pra sala ${sessao.codigo}...`;
-    const voltou = await conectarNaSala((sinal) => sinal.pedir('voltar', { bilhete: sessao.bilhete, recarregou: true }));
+    const voltou = await conectarNaSala((sinal) => sinal.pedir('voltar', { bilhete: sessao.bilhete, recarregou: true, sessao: sessaoAtual() }));
     if (!voltou) {
       apagarSessao();
       el.statusServidor.textContent = 'Servidor online';
@@ -327,16 +352,23 @@ async function criarSala() {
     }
     const limite = Number(el.selectLimite.value);
     guardar('limite', String(limite));
+    // Benefício: abrir a sala fixa (vai a sessão junto, pro servidor saber de quem é)
+    const fixa = !$('linha-fixa').hidden && $('check-fixa').checked;
     const resposta = await fetch(api('/api/salas'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ senha, limite }),
+      headers: { 'Content-Type': 'application/json', ...(fixa ? { Authorization: `Bearer ${sessaoAtual()}` } : {}) },
+      body: JSON.stringify({ senha, limite, fixa }),
     });
     const dados = await resposta.json();
     if (!resposta.ok) throw new Error(dados.erro || 'Erro ao criar a sala');
     // A chave de dono só vai pra quem criou: entrando com ela, vira o dono
     await conectarNaSala((sinal) =>
-      sinal.pedir('entrar', { codigo: dados.codigo, nome: el.campoNome.value.trim(), chaveDono: dados.chaveDono })
+      sinal.pedir('entrar', {
+        codigo: dados.codigo,
+        nome: el.campoNome.value.trim(),
+        chaveDono: dados.chaveDono,
+        sessao: sessaoAtual(), // com conta: o servidor dá os benefícios (✔, foto, 4K...)
+      })
     );
   } catch (erro) {
     mostrarErroInicio(traduzirErro(erro));
@@ -383,6 +415,7 @@ async function tentarEntrar(codigo) {
     setCarregando(true);
     try {
       const info = await consultarSala(codigo);
+      if (!info.existe && info.fixaFechada) throw new Error('Essa é a sala fixa de alguém, e o dono ainda não abriu ela agora.');
       if (!info.existe) throw new Error('Sala não encontrada. Confira o código.');
       if (info.trancada) throw new Error('A sala está trancada pelo dono.');
       if (info.cheia) return esperarVaga(codigo, info);
@@ -404,7 +437,7 @@ async function tentarEntrar(codigo) {
 
   pararEspera();
   const senha = el.campoSenhaEntrar.value;
-  const entrou = await conectarNaSala((sinal) => sinal.pedir('entrar', { codigo, nome: el.campoNome.value.trim(), senha }));
+  const entrou = await conectarNaSala((sinal) => sinal.pedir('entrar', { codigo, nome: el.campoNome.value.trim(), senha, sessao: sessaoAtual() }));
   // Alguém pegou a vaga antes? Volta a esperar
   if (!entrou && el.erroInicio.textContent.includes('cheia')) esperarVaga(codigo);
 }
@@ -514,9 +547,36 @@ function montarSala(info) {
   for (const m of info.chat) adicionarMensagem(m, false);
   observarChat();
 
+  // Fiscal do 4K (camada 3): confere o vídeo que CHEGA de quem não tem conta
+  clearInterval(estado.timerFiscal);
+  estado.timerFiscal = setInterval(fiscalizarQualidade, 4000);
+
   // Mantém o servidor acordado enquanto a sala está aberta
   clearInterval(estado.timerPing);
   estado.timerPing = setInterval(() => estado.sinal.pedir('ping').catch(() => {}), 4 * 60_000);
+}
+
+// -----------------------------------------------------
+// Fiscal do "4K só com conta".
+// Quem transmite controla o próprio navegador (pode burlar o site), mas quem
+// ASSISTE está com o site normal e mede o vídeo que chega. Acima de 1080p ou
+// 40 fps vindo de alguém sem conta, 2 medições seguidas -> avisa o servidor.
+// -----------------------------------------------------
+const suspeitas = new Map(); // id -> medições seguidas acima do limite
+
+async function fiscalizarQualidade() {
+  if (!estado.malha) return;
+  const recebido = await estado.malha.medirRecebido().catch(() => new Map());
+  for (const [id, { altura, fps }] of recebido) {
+    const pessoa = estado.pessoas.get(id);
+    const passou = pessoa?.transmitindo && !pessoa.verificado && (altura > 1100 || fps > 40);
+    const vezes = passou ? (suspeitas.get(id) ?? 0) + 1 : 0;
+    suspeitas.set(id, vezes);
+    if (vezes >= 2) {
+      suspeitas.set(id, 0);
+      estado.sinal?.pedir('denunciar', { id }).catch(() => {});
+    }
+  }
 }
 
 // -----------------------------------------------------
@@ -549,7 +609,14 @@ function aplicarEstado(info) {
 
   // ---------- Quem está na sala agora ----------
   for (const p of info.participantes) {
-    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo, camera: p.camera, ausente: p.ausente });
+    estado.pessoas.set(p.id, {
+      nome: p.nome,
+      transmitindo: p.transmitindo,
+      camera: p.camera,
+      ausente: p.ausente,
+      verificado: p.verificado, // ✔ entrou com a conta do Discord
+      foto: p.foto,
+    });
     if (p.id === estado.meuId) continue;
     estado.malha.par(p.id); // conexão direta com essa pessoa
     p.transmitindo ? garantirTile(p.id) : removerTile(p.id);
@@ -575,7 +642,14 @@ function registrarEventos(sinal) {
       clearTimeout(saidaRecente);
       estado.saidasRecentes.delete(p.nome);
     }
-    estado.pessoas.set(p.id, { nome: p.nome, transmitindo: p.transmitindo, camera: p.camera, ausente: p.ausente });
+    estado.pessoas.set(p.id, {
+      nome: p.nome,
+      transmitindo: p.transmitindo,
+      camera: p.camera,
+      ausente: p.ausente,
+      verificado: p.verificado, // ✔ entrou com a conta do Discord
+      foto: p.foto,
+    });
     estado.malha.par(p.id);
     if (p.transmitindo) garantirTile(p.id);
     renderizarPessoas();
@@ -629,6 +703,17 @@ function registrarEventos(sinal) {
     renderizarPessoas();
   });
 
+  // Fiscal do 4K: passou do limite sem conta
+  sinal.on('limiteSemConta', () => {
+    if (!estado.malha?.transmitindo) return;
+    estado.malha.mudarNivel('fluido');
+    mostrarAviso('4K/120 fps é só pra quem tem conta. A sua transmissão foi pra Fluido (1080p, 30 fps).');
+  });
+  sinal.on('transmissaoEncerrada', ({ motivo }) => {
+    if (estado.malha?.transmitindo) pararTransmissao();
+    mostrarAviso(`${motivo} Entre com o Discord pra usar o 4K.`, true);
+  });
+
   sinal.on('chat', (m) => adicionarMensagem(m, true));
   sinal.on('aviso', ({ texto }) => adicionarMensagemSistema(texto));
 
@@ -668,6 +753,7 @@ function registrarEventos(sinal) {
         bilhete: estado.bilhete,
         recarregou: false,
         transmitindo: estado.malha?.transmitindo ?? false,
+        sessao: sessaoAtual(),
       });
       if (info.reentrou) {
         // Voltou como alguém "novo": refaz as conexões de vídeo com todo mundo
@@ -1326,6 +1412,20 @@ function renderizarPessoas() {
     const item = criar('li');
     const esquerda = criar('span', 'nome-pessoa', pessoa.nome);
     esquerda.style.setProperty('--cor', corDe(id));
+    // Com conta: foto do Discord no lugar da bolinha de cor, e o ✔
+    if (pessoa.foto) {
+      const foto = criar('img', 'foto-pessoa');
+      foto.src = pessoa.foto;
+      foto.alt = '';
+      foto.referrerPolicy = 'no-referrer';
+      esquerda.classList.add('com-foto');
+      esquerda.prepend(foto);
+    }
+    if (pessoa.verificado) {
+      const selo = criar('span', 'verificado', ' ✔');
+      selo.title = 'Entrou com a conta do Discord: é a pessoa mesmo';
+      esquerda.append(selo);
+    }
     if (id === estado.donoId) esquerda.append(criar('span', 'coroa', ' 👑'));
     if (id === estado.meuId) esquerda.append(criar('span', 'voce', ' (você)'));
     if (estado.voltando.has(id) || pessoa.ausente) esquerda.append(criar('span', 'voce', ' (voltando...)'));

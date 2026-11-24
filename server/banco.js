@@ -125,14 +125,56 @@ async function contaExiste(usuarioId) {
   return rowCount === 1;
 }
 
-// Resumo da conta pro site (nome e foto)
+// Resumo da conta pro site e pras salas (nome, foto e sala fixa)
 async function resumoConta(usuarioId) {
-  const { rows } = await pool.query('SELECT nome, discord_id, avatar FROM usuarios WHERE id = $1', [usuarioId]);
+  const { rows } = await pool.query(
+    `SELECT u.id, u.nome, u.discord_id, u.avatar, f.codigo AS sala_fixa
+       FROM usuarios u LEFT JOIN salas_fixas f ON f.dono_id = u.id
+      WHERE u.id = $1`,
+    [usuarioId]
+  );
   const u = rows[0];
   if (!u) return null;
   // A foto fica no Discord: aqui só se monta o endereço dela a partir do código
   const foto = u.avatar ? `https://cdn.discordapp.com/avatars/${u.discord_id}/${u.avatar}.png?size=64` : null;
-  return { nome: u.nome, foto };
+  return { id: u.id, nome: u.nome, foto, salaFixa: u.sala_fixa ?? null };
+}
+
+// =====================================================
+// BENEFÍCIOS DA CONTA
+// =====================================================
+
+// Nome reservado: algum dono de conta usa esse nome? (sem diferenciar maiúscula)
+async function nomeReservado(nome) {
+  const { rowCount } = await pool.query('SELECT 1 FROM usuarios WHERE lower(nome) = lower($1) LIMIT 1', [nome]);
+  return rowCount > 0;
+}
+
+// Sala fixa: 6 letras/números (o mesmo tamanho dos códigos normais). null = tirar
+async function definirSalaFixa(usuarioId, codigo) {
+  if (!codigo) {
+    await pool.query('DELETE FROM salas_fixas WHERE dono_id = $1', [usuarioId]);
+    return null;
+  }
+  const limpo = String(codigo).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!/^[A-Z0-9]{6}$/.test(limpo)) throw new Error('A sala fixa precisa ter 6 letras ou números (ex: RAFAEL).');
+  try {
+    await pool.query(
+      `INSERT INTO salas_fixas (codigo, dono_id) VALUES ($1, $2)
+       ON CONFLICT (dono_id) DO UPDATE SET codigo = EXCLUDED.codigo, criada_em = now()`,
+      [limpo, usuarioId]
+    );
+  } catch (erro) {
+    if (erro.code === '23505') throw new Error('Esse código já é a sala fixa de outra pessoa. Escolha outro.');
+    throw erro;
+  }
+  return limpo;
+}
+
+// De quem é esse código fixo? (id da conta, ou null se ninguém reservou)
+async function donoDoCodigo(codigo) {
+  const { rows } = await pool.query('SELECT dono_id FROM salas_fixas WHERE codigo = $1', [codigo]);
+  return rows[0]?.dono_id ?? null;
 }
 
 // Marca que a pessoa usou a conta (adia a limpeza de contas inativas)
@@ -210,6 +252,9 @@ module.exports = {
   contaPorDiscord,
   contaExiste,
   resumoConta,
+  nomeReservado,
+  definirSalaFixa,
+  donoDoCodigo,
   registrarAcesso,
   corrigirNome,
   meusDados,

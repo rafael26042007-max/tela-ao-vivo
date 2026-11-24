@@ -15,7 +15,9 @@ const { criarSala, infoSala, estatisticas, tratarConexao, avisarReinicio } = req
 const { temTurn } = require('./turn');
 const limites = require('./limites');
 const { feedbackLigado, validarFeedback, enviarFeedback } = require('./feedback');
-const { conectarBanco, bancoLigado, agendarLimpeza, resumoConta, meusDados, corrigirNome, apagarConta, registrarAcesso } = require('./banco');
+const {
+  conectarBanco, bancoLigado, agendarLimpeza, resumoConta, meusDados, corrigirNome, apagarConta, registrarAcesso, definirSalaFixa,
+} = require('./banco');
 const { loginLigado, iniciarLogin, concluirLogin, usuarioDaRequisicao } = require('./login');
 
 const PASTA_WEB = path.join(__dirname, '..', 'web');
@@ -148,6 +150,7 @@ function servirArquivo(res, urlPath) {
 //   GET  /api/conta          -> nome e foto de quem está logado
 //   GET  /api/conta/dados    -> LGPD: tudo que existe sobre a pessoa (baixar)
 //   POST /api/conta/nome     -> LGPD: corrigir o nome
+//   POST /api/conta/sala-fixa -> benefício: escolher o código fixo (6 letras/números)
 //   POST /api/conta/apagar   -> LGPD: apagar a conta e tudo ligado a ela
 //   GET  /qualquer-coisa     -> arquivos do site
 // =====================================================
@@ -191,9 +194,15 @@ async function tratarRequisicao(req, res) {
         return responderJson(req, res, 400, { erro: erro.message });
       }
       limites.criacaoDeSalas.registrar(ip);
-      // chaveDono: só quem criou recebe; quem entra com ela vira o dono da sala
-      const { codigo, chaveDono } = await criarSala({ senha: corpo.senha, limite: corpo.limite });
-      return responderJson(req, res, 201, { codigo, chaveDono });
+      // Logado? (só precisa pra abrir a sala fixa)
+      const contaId = corpo.fixa ? await usuarioDaRequisicao(req) : null;
+      try {
+        // chaveDono: só quem criou recebe; quem entra com ela vira o dono da sala
+        const { codigo, chaveDono } = await criarSala({ senha: corpo.senha, limite: corpo.limite, contaId, fixa: !!corpo.fixa });
+        return responderJson(req, res, 201, { codigo, chaveDono });
+      } catch (erro) {
+        return responderJson(req, res, 409, { erro: erro.message });
+      }
     }
 
     // ---------- Login com Discord (navegação normal, não é API: sem checagem de origem) ----------
@@ -228,6 +237,21 @@ async function tratarRequisicao(req, res) {
         }
         if (!String(corpo.nome ?? '').trim()) return responderJson(req, res, 400, { erro: 'Digite um nome.' });
         await corrigirNome(usuarioId, corpo.nome);
+        return responderJson(req, res, 200, await resumoConta(usuarioId));
+      }
+      // Benefício: escolher (ou tirar) a sala fixa
+      if (url.pathname === '/api/conta/sala-fixa' && req.method === 'POST') {
+        let corpo;
+        try {
+          corpo = await lerJson(req);
+        } catch (erro) {
+          return responderJson(req, res, 400, { erro: erro.message });
+        }
+        try {
+          await definirSalaFixa(usuarioId, corpo.codigo ? String(corpo.codigo) : null);
+        } catch (erro) {
+          return responderJson(req, res, 400, { erro: erro.message });
+        }
         return responderJson(req, res, 200, await resumoConta(usuarioId));
       }
       if (url.pathname === '/api/conta/apagar' && req.method === 'POST') {
@@ -265,7 +289,7 @@ async function tratarRequisicao(req, res) {
     // ---------- Consultar sala ----------
     const rotaSala = url.pathname.match(/^\/api\/salas\/([^/]+)$/);
     if (rotaSala && req.method === 'GET') {
-      return responderJson(req, res, 200, infoSala(rotaSala[1]));
+      return responderJson(req, res, 200, await infoSala(rotaSala[1]));
     }
 
     if (url.pathname.startsWith('/api/')) {

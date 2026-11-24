@@ -14,6 +14,8 @@ const { gerarHash, conferir } = require('./senha');
 const { criarBilhete, abrirBilhete } = require('./bilhete');
 const { obterIceServers } = require('./turn');
 const limites = require('./limites');
+const banco = require('./banco');
+const { usuarioDaSessao, loginLigado } = require('./login');
 
 // Sem 0/O e 1/I pra ninguém confundir na hora de digitar o código
 const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -41,6 +43,46 @@ function normalizarCodigo(texto) {
 // Remove caracteres de controle, espaços extras e corta no tamanho máximo
 function limparTexto(texto, max) {
   return String(texto ?? '').replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+// =====================================================
+// Contas (opcionais): quem entrou logado ganha os benefícios
+// =====================================================
+
+// Sessão -> { id, nome, foto, salaFixa } ou null (sem conta, sessão falsa ou banco desligado)
+async function contaDaSessao(sessao) {
+  const id = await usuarioDaSessao(sessao).catch(() => null);
+  return id ? banco.resumoConta(id).catch(() => null) : null;
+}
+
+// Nome que a pessoa vai usar na sala:
+//   com conta -> o nome da conta (o ✔ garante que é ela mesma)
+//   sem conta -> o que digitou; se for o nome de alguma conta, ganha " (convidado)"
+async function nomeNaSala(nomeDigitado, conta) {
+  if (conta) return conta.nome;
+  const limpo = limparTexto(nomeDigitado, 30) || 'Anônimo';
+  const reservado = banco.bancoLigado() && (await banco.nomeReservado(limpo).catch(() => false));
+  return reservado ? `${limpo.slice(0, 19)} (convidado)` : limpo;
+}
+
+// Código fixo de alguém? (os códigos aleatórios nunca usam um código reservado)
+async function donoDoCodigo(codigo) {
+  return banco.bancoLigado() ? banco.donoDoCodigo(codigo).catch(() => null) : null;
+}
+
+// Teto de banda no SDP (camada 2 do "4K só com conta").
+// O "b=AS" na descrição que chega pra alguém diz o máximo que ESSE alguém pode
+// mandar de volta. Quem não tem conta recebe o teto e o próprio Chrome obedece.
+function limitarBanda(sdp, kbps) {
+  const saida = [];
+  let emVideo = false;
+  for (const linha of String(sdp).split('\r\n')) {
+    if (linha.startsWith('m=')) emVideo = linha.startsWith('m=video');
+    if (emVideo && (linha.startsWith('b=AS:') || linha.startsWith('b=TIAS:'))) continue;
+    saida.push(linha);
+    if (emVideo && linha.startsWith('c=')) saida.push(`b=AS:${kbps}`);
+  }
+  return saida.join('\r\n');
 }
 
 function enviar(ws, evento, dados) {
@@ -122,9 +164,10 @@ class Sala {
   }
 
   // ---------- Coloca alguém na sala ----------
-  adicionar(ws, nome, { id, dono = false, transmitindo = false } = {}) {
+  adicionar(ws, nome, { id, dono = false, transmitindo = false, conta = null } = {}) {
     const p = new Participante(ws, this, this.nomeUnico(nome), id);
     p.transmitindo = transmitindo;
+    p.conta = conta;
     this.participantes.set(p.id, p);
     if (dono) this.donoId = p.id;
     this.cancelarFechamento();
@@ -177,13 +220,27 @@ class Participante {
     this.transmitindo = false;
     // Câmera ligada: id do stream da câmera (quem recebe usa pra saber qual vídeo é a câmera)
     this.camera = null;
+    // Conta (opcional): { id, nome, foto } de quem entrou logado
+    this.conta = null;
+    // Fiscal do 4K (quem não tem conta): quem denunciou, quando foi avisado, até quando está bloqueado
+    this.denuncias = new Map();
+    this.avisadoEm = 0;
+    this.bloqueadoAte = 0;
     this.timerSaida = null;
     this.ultimasMensagens = []; // pra limitar spam no chat
   }
 
   resumo() {
     // ausente = a conexão caiu e a pessoa ainda pode voltar (ex: celular com a tela apagada)
-    return { id: this.id, nome: this.nome, transmitindo: this.transmitindo, camera: this.camera, ausente: !this.ws };
+    return {
+      id: this.id,
+      nome: this.nome,
+      transmitindo: this.transmitindo,
+      camera: this.camera,
+      ausente: !this.ws,
+      verificado: !!this.conta, // ✔: entrou com a conta do Discord
+      foto: this.conta?.foto ?? null,
+    };
   }
 }
 
@@ -212,6 +269,7 @@ async function estadoParaCliente(sala, participante, extra = {}) {
     bilhete: bilheteDe(participante),
     donoId: sala.donoId,
     trancada: sala.trancada,
+    fixa: !!sala.contaDona,
     participantes: sala.resumo(),
     chat: sala.chat,
     iceServers: await obterIceServers(),
@@ -233,15 +291,35 @@ function limiteValido(valor) {
   return Math.min(config.limiteMaximoPessoas, Math.max(2, n));
 }
 
-async function criarSala({ senha, limite } = {}) {
+// contaId + fixa: abre a SALA FIXA da conta (benefício) em vez de um código aleatório
+async function criarSala({ senha, limite, contaId = null, fixa = false } = {}) {
   if (salas.size >= config.maxSalas) {
     throw new Error('O servidor atingiu o limite de salas. Tente mais tarde.');
   }
   const senhaTexto = String(senha ?? '');
   if (senhaTexto.length > config.tamanhoMaxSenha) throw new Error('Senha muito longa.');
-  const senhaGuardada = senhaTexto ? await gerarHash(senhaTexto) : null;
 
-  const sala = new Sala(gerarCodigo(), senhaGuardada, limiteValido(limite ?? config.maxPessoasPorSala));
+  // ---------- Sala fixa ----------
+  let codigo = null;
+  if (fixa) {
+    if (!contaId) throw new Error('Entre com o Discord pra usar a sala fixa.');
+    codigo = (await banco.resumoConta(contaId))?.salaFixa;
+    if (!codigo) throw new Error('Você ainda não escolheu a sua sala fixa (em Minha conta).');
+    const aberta = salas.get(codigo);
+    if (aberta?.contaDona === contaId) {
+      // Já está aberta: o dono só entra de novo (como dono)
+      return { codigo, chaveDono: aberta.chaveDono };
+    }
+    if (aberta) throw new Error('O código da sua sala fixa está sendo usado por uma sala temporária. Tente daqui a pouco.');
+  } else {
+    // Código aleatório que não seja a sala fixa de ninguém
+    do codigo = gerarCodigo();
+    while (await donoDoCodigo(codigo));
+  }
+
+  const senhaGuardada = senhaTexto ? await gerarHash(senhaTexto) : null;
+  const sala = new Sala(codigo, senhaGuardada, limiteValido(limite ?? config.maxPessoasPorSala));
+  if (fixa) sala.contaDona = contaId; // o dono da conta é sempre o dono dessa sala
   salas.set(sala.codigo, sala);
   console.log(`Sala ${sala.codigo} criada (até ${sala.limite} pessoas${senhaGuardada ? ', com senha' : ''})`);
   // A chave de dono vai só pra quem criou: quem entrar com ela vira dono
@@ -249,9 +327,11 @@ async function criarSala({ senha, limite } = {}) {
 }
 
 // Usado pela tela inicial pra saber se precisa pedir senha
-function infoSala(codigoBruto) {
-  const sala = salas.get(normalizarCodigo(codigoBruto));
-  if (!sala) return { existe: false };
+async function infoSala(codigoBruto) {
+  const codigo = normalizarCodigo(codigoBruto);
+  const sala = salas.get(codigo);
+  // Sala fixa que o dono ainda não abriu: mensagem mais clara que "não encontrada"
+  if (!sala) return { existe: false, fixaFechada: !!(await donoDoCodigo(codigo)) };
   return {
     existe: true,
     codigo: sala.codigo,
@@ -295,13 +375,22 @@ function tratarConexao(ws) {
     // -------------------------------------------------
     // Entrar numa sala com o código (e a senha, se tiver)
     // -------------------------------------------------
-    async entrar({ codigo, nome, senha, chaveDono }) {
+    async entrar({ codigo, nome, senha, chaveDono, sessao }) {
       if (participante) throw new Error('Você já está numa sala');
+      const conta = await contaDaSessao(sessao);
 
       const s = salas.get(normalizarCodigo(codigo));
-      if (!s) throw new Error('Sala não encontrada. Confira o código.');
+      if (!s) {
+        if (await donoDoCodigo(normalizarCodigo(codigo))) {
+          throw new Error('Essa é a sala fixa de alguém, e o dono ainda não abriu ela agora.');
+        }
+        throw new Error('Sala não encontrada. Confira o código.');
+      }
+      if (participante) throw new Error('Você já está numa sala'); // (pediu duas vezes enquanto esperava)
 
-      const ehCriador = mesmoSegredo(chaveDono, s.chaveDono);
+      // Dono da conta da sala fixa: entra como dono mesmo sem a chave (ex: outro PC)
+      const donoDaFixa = !!conta && s.contaDona === conta.id;
+      const ehCriador = mesmoSegredo(chaveDono, s.chaveDono) || donoDaFixa;
       if (s.trancada && !ehCriador) throw new Error('A sala está trancada pelo dono.');
 
       if (s.senhaGuardada && !ehCriador) {
@@ -320,7 +409,14 @@ function tratarConexao(ws) {
         throw new Error(`A sala está cheia (máximo ${s.limite} pessoas).`);
       }
 
-      participante = s.adicionar(ws, limparTexto(nome, 30) || 'Anônimo', { dono: ehCriador && !s.donoId });
+      const nomeFinal = await nomeNaSala(nome, conta);
+      if (participante) throw new Error('Você já está numa sala');
+      participante = s.adicionar(ws, nomeFinal, { dono: ehCriador && !s.donoId, conta });
+      // A sala fixa é da conta: o dono dela pega o 👑 de volta ao entrar
+      if (donoDaFixa && s.donoId !== participante.id) {
+        s.donoId = participante.id;
+        s.enviarParaTodos('dono', { id: participante.id });
+      }
       return estadoParaCliente(s, participante);
     },
 
@@ -330,10 +426,12 @@ function tratarConexao(ws) {
     //  - a pessoa apertou F5 (recarregou: true): entra de novo, sem pedir senha
     //  - o servidor reiniciou e a sala sumiu: recria com o mesmo código/senha/dono
     // -------------------------------------------------
-    async voltar({ bilhete, recarregou = false, transmitindo = false }) {
+    async voltar({ bilhete, recarregou = false, transmitindo = false, sessao }) {
       if (participante) throw new Error('Você já está numa sala');
       const b = abrirBilhete(bilhete);
       if (!b) throw new Error('Não foi possível voltar pra sala.');
+      const conta = await contaDaSessao(sessao);
+      if (participante) throw new Error('Você já está numa sala');
 
       // ---------- A sala sumiu (servidor reiniciou)? Recria ----------
       let s = salas.get(b.codigo);
@@ -343,6 +441,9 @@ function tratarConexao(ws) {
         s = new Sala(b.codigo, senha, limiteValido(b.limite ?? config.maxPessoasPorSala));
         s.recriada = true;
         s.recriadaEm = Date.now();
+        // Era uma sala fixa? Continua sendo da mesma conta
+        s.contaDona = await donoDoCodigo(s.codigo);
+        if (salas.has(s.codigo)) s = salas.get(s.codigo); // alguém recriou enquanto esperava o banco
         salas.set(s.codigo, s);
         console.log(`Sala ${s.codigo} recriada depois do reinício`);
         // Se o dono não voltar em 30s, passa pra quem já voltou
@@ -366,6 +467,7 @@ function tratarConexao(ws) {
         existente.timerSaida = null;
         if (existente.ws && existente.ws !== ws) existente.ws.close(4001, 'Conectado em outro lugar');
         existente.ws = ws;
+        if (!existente.conta && conta) existente.conta = conta; // servidor reiniciou: a conta volta junto
         s.enviarParaTodos('ausente', { id: existente.id, ausente: false }, existente.id);
         participante = existente;
         return estadoParaCliente(s, existente, { recriada, reentrou: false });
@@ -381,10 +483,11 @@ function tratarConexao(ws) {
 
       const podeSerDono = b.dono && (!s.donoId || s.donoId === b.id);
       const podeTransmitir = manterId && transmitindo && s.quantosTransmitindo() < config.maxTransmissoesPorSala;
-      participante = s.adicionar(ws, b.nome, {
+      participante = s.adicionar(ws, conta ? conta.nome : b.nome, {
         id: manterId ? b.id : undefined,
         dono: podeSerDono,
         transmitindo: podeTransmitir,
+        conta,
       });
       if (podeSerDono) clearTimeout(s.timerDono);
       return estadoParaCliente(s, participante, { recriada, reentrou: !manterId });
@@ -394,6 +497,11 @@ function tratarConexao(ws) {
     async sinal({ para, dados }) {
       const destino = sala().participantes.get(String(para));
       if (!destino || destino === participante) throw new Error('Participante não encontrado');
+      // Quem recebe não tem conta: a descrição vai com o teto de banda (4K só com conta)
+      // (só quando dá pra criar conta: sem login configurado, ninguém fica limitado)
+      if (loginLigado() && !destino.conta && typeof dados?.descricao?.sdp === 'string') {
+        dados = { ...dados, descricao: { ...dados.descricao, sdp: limitarBanda(dados.descricao.sdp, config.kbpsSemConta) } };
+      }
       enviar(destino.ws, 'sinal', { de: participante.id, dados });
     },
 
@@ -412,6 +520,10 @@ function tratarConexao(ws) {
     async transmissao({ ativo }) {
       const s = sala();
       const quer = !!ativo;
+      if (quer && participante.bloqueadoAte > Date.now()) {
+        const minutos = Math.ceil((participante.bloqueadoAte - Date.now()) / 60_000);
+        throw new Error(`A sua transmissão foi encerrada por passar do limite sem conta. Tente de novo em ${minutos} min.`);
+      }
       if (quer && !participante.transmitindo && s.quantosTransmitindo() >= config.maxTransmissoesPorSala) {
         throw new Error(
           `A sala já tem ${s.quantosTransmitindo()} telas sendo transmitidas (máximo ${config.maxTransmissoesPorSala}).`
@@ -420,6 +532,47 @@ function tratarConexao(ws) {
       if (participante.transmitindo === quer) return;
       participante.transmitindo = quer;
       s.enviarParaTodos('transmissao', { participanteId: participante.id, ativo: quer });
+    },
+
+    // -------------------------------------------------
+    // Fiscal do "4K só com conta" (camada 3).
+    // Quem ASSISTE mede o vídeo que chega. Se vier acima de 1080p/40fps de alguém
+    // sem conta, avisa aqui. 1º: o servidor pede pra cair pra Fluido (quem não
+    // burlou nem percebe). Se continuar depois de 15s e mais gente confirmar:
+    // a transmissão é encerrada e fica bloqueada por 5 minutos.
+    // -------------------------------------------------
+    async denunciar({ id }) {
+      const s = sala();
+      const alvo = s.participantes.get(String(id));
+      if (!loginLigado() || !alvo || alvo === participante || alvo.conta || !alvo.transmitindo) return { acao: 'ignorado' };
+
+      const agora = Date.now();
+      alvo.denuncias.set(participante.id, agora);
+      for (const [quem, quando] of alvo.denuncias) if (agora - quando > 60_000) alvo.denuncias.delete(quem);
+
+      // 1) Primeiro aviso (ou o último foi há muito tempo): pede pra baixar pra Fluido
+      if (!alvo.avisadoEm || agora - alvo.avisadoEm > 120_000) {
+        alvo.avisadoEm = agora;
+        enviar(alvo.ws, 'limiteSemConta', {});
+        return { acao: 'avisado' };
+      }
+      // 2) Dá 15s pro navegador obedecer
+      if (agora - alvo.avisadoEm < 15_000) return { acao: 'aguardando' };
+      // 3) Continua? Precisa de 2 pessoas confirmando (ou a única que assiste),
+      //    pra um espectador mal-intencionado sozinho não derrubar ninguém numa sala cheia
+      const outros = s.participantes.size - 1;
+      if (alvo.denuncias.size < Math.min(2, outros)) return { acao: 'aguardando' };
+
+      alvo.transmitindo = false;
+      alvo.bloqueadoAte = agora + 5 * 60_000;
+      alvo.avisadoEm = 0;
+      alvo.denuncias.clear();
+      s.enviarParaTodos('transmissao', { participanteId: alvo.id, ativo: false });
+      enviar(alvo.ws, 'transmissaoEncerrada', {
+        motivo: 'A transmissão passou do limite de quem não tem conta (1080p, 30 fps) e foi encerrada.',
+      });
+      console.log(`Sala ${s.codigo}: transmissão de ${alvo.nome} encerrada pelo fiscal do 4K`);
+      return { acao: 'encerrado' };
     },
 
     // Chat da sala
