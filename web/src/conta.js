@@ -15,6 +15,7 @@ let aoMudarNome = () => {};
 let aoMudarConta = () => {}; // o app atualiza a tela (Ultra, sala fixa, nome travado)
 let versaoTermos = null;
 let conta = null; // { nome, foto, salaFixa } de quem está logado
+let desligada = false; // página sem os elementos da conta (não mexe em nada)
 
 // ---------- Pro resto do site ----------
 export const temConta = () => conta !== null;
@@ -61,6 +62,16 @@ async function chamar(caminho, opcoes = {}) {
 //   mostrarErro(t) -> mostra um aviso na tela inicial
 // -----------------------------------------------------
 export function prepararConta(opcoes) {
+  // Falta algum elemento (ex: HTML de outra versão)? Fica sem conta, mas não trava o site
+  const necessarios = ['bloco-conta', 'botao-entrar-discord', 'dialogo-login', 'form-login', 'check-aceite', 'status-login',
+    'botao-minha-conta', 'dialogo-conta', 'campo-nome-conta', 'salvar-nome-conta', 'campo-sala-fixa', 'salvar-sala-fixa',
+    'baixar-dados', 'apagar-conta', 'botao-sair-conta', 'status-conta', 'conta-conectado', 'conta-desconectado', 'nome-conta', 'foto-conta'];
+  const faltando = necessarios.filter((id) => !$(id));
+  if (faltando.length) {
+    console.warn('Conta desligada: faltam elementos na página', faltando);
+    desligada = true;
+    return;
+  }
   api = opcoes.api;
   aoMudarNome = opcoes.aoMudarNome;
   aoMudarConta = opcoes.aoMudarConta ?? (() => {});
@@ -174,6 +185,7 @@ export function prepararConta(opcoes) {
 // Chamado depois do /saude: mostra o bloco da conta se o login estiver disponível
 // -----------------------------------------------------
 export async function mostrarConta(saude) {
+  if (desligada) return;
   versaoTermos = saude.termos ?? null;
   $('bloco-conta').hidden = !saude.login;
   if (!saude.login) return;

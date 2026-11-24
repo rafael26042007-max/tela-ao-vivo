@@ -8,6 +8,32 @@ import { prepararFeedback, mostrarBotoesFeedback } from './feedback.js?v=__VERSA
 import { prepararConta, mostrarConta, temConta, contaAtual, sessaoAtual } from './conta.js?v=__VERSAO__';
 
 // =====================================================
+// Versões misturadas?
+// O navegador pode reaproveitar um HTML antigo (cache de até 10 min no GitHub
+// Pages) e mesmo assim baixar o JS novo. HTML velho + JS novo = elementos que
+// não existem = site travado. Se a versão do HTML for diferente da deste JS,
+// recarrega UMA vez pedindo o HTML de novo (o ?atualizar= fura o cache).
+// =====================================================
+(() => {
+  const versaoJs = new URL(import.meta.url).searchParams.get('v');
+  const versaoHtml = document.querySelector('meta[name="versao"]')?.content;
+  const url = new URL(location.href);
+  if (!versaoJs || versaoJs.includes('VERSAO')) return; // rodando no PC (sem número de versão)
+  if (versaoJs === versaoHtml) {
+    // Tudo certo: tira o ?atualizar= do endereço, se tiver
+    if (url.searchParams.has('atualizar')) {
+      url.searchParams.delete('atualizar');
+      history.replaceState(null, '', url);
+    }
+    return;
+  }
+  if (url.searchParams.get('atualizar') === versaoJs) return; // já tentou: segue (melhor que ficar em loop)
+  url.searchParams.set('atualizar', versaoJs);
+  location.replace(url);
+  throw new Error('Atualizando o site pra versão nova...'); // para aqui; a página vai recarregar
+})();
+
+// =====================================================
 // Endereço do servidor (vem do config.js)
 // =====================================================
 const BASE = String(window.TELA_AO_VIVO?.servidor ?? '').replace(/\/+$/, '');
@@ -294,8 +320,8 @@ prepararConta({
 function aplicarConta(conta) {
   el.campoNome.readOnly = !!conta;
   el.campoNome.title = conta ? 'É o nome da sua conta. Pra mudar, use "Minha conta".' : '';
-  $('linha-fixa').hidden = !conta?.salaFixa;
-  $('codigo-fixa').textContent = conta?.salaFixa ?? '';
+  if ($('linha-fixa')) $('linha-fixa').hidden = !conta?.salaFixa;
+  if ($('codigo-fixa')) $('codigo-fixa').textContent = conta?.salaFixa ?? '';
   aplicarUltraSoComConta();
 }
 
@@ -353,7 +379,7 @@ async function criarSala() {
     const limite = Number(el.selectLimite.value);
     guardar('limite', String(limite));
     // Benefício: abrir a sala fixa (vai a sessão junto, pro servidor saber de quem é)
-    const fixa = !$('linha-fixa').hidden && $('check-fixa').checked;
+    const fixa = !!$('linha-fixa') && !$('linha-fixa').hidden && $('check-fixa').checked;
     const resposta = await fetch(api('/api/salas'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(fixa ? { Authorization: `Bearer ${sessaoAtual()}` } : {}) },
