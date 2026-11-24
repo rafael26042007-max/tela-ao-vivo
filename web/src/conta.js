@@ -18,7 +18,8 @@ let conta = null; // { nome, foto, salaFixa } de quem está logado
 let desligada = false; // página sem os elementos da conta (não mexe em nada)
 
 // ---------- Pro resto do site ----------
-export const temConta = () => conta !== null;
+// (confere também se a sessão ainda existe: outra aba pode ter saído da conta)
+export const temConta = () => conta !== null && !!ler(CHAVE_SESSAO);
 export const contaAtual = () => conta;
 // A sessão vai junto ao entrar/voltar numa sala: é assim que o servidor sabe dos benefícios
 export const sessaoAtual = () => (conta ? ler(CHAVE_SESSAO) : null);
@@ -179,13 +180,32 @@ export function prepararConta(opcoes) {
 
   // Sair (só esquece a sessão neste navegador)
   $('botao-sair-conta').addEventListener('click', sair);
+
+  // -----------------------------------------------------
+  // Outra aba entrou ou saiu da conta: esta aba acompanha na hora.
+  // O evento 'storage' só chega nas OUTRAS abas do mesmo site.
+  // (Sem isso: saiu numa aba, a outra continuava achando que tinha conta,
+  //  mostrava o Ultra liberado e o servidor tratava como convidado.)
+  // -----------------------------------------------------
+  window.addEventListener('storage', (e) => {
+    if (e.key !== CHAVE_SESSAO) return;
+    if (!e.newValue) {
+      conta = null;
+      mostrarDesconectado();
+    } else if (ultimaSaude) {
+      mostrarConta(ultimaSaude); // entrou em outra aba: busca a conta aqui também
+    }
+  });
 }
 
 // -----------------------------------------------------
 // Chamado depois do /saude: mostra o bloco da conta se o login estiver disponível
 // -----------------------------------------------------
+let ultimaSaude = null;
+
 export async function mostrarConta(saude) {
   if (desligada) return;
+  ultimaSaude = saude;
   versaoTermos = saude.termos ?? null;
   $('bloco-conta').hidden = !saude.login;
   if (!saude.login) return;

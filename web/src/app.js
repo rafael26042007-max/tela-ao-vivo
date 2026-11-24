@@ -330,10 +330,14 @@ function aplicarConta(conta) {
 }
 
 function aplicarUltraSoComConta() {
+  // Na sala, vale o que o SERVIDOR sabe: entrou com o ✔? (logar depois, em outra aba, não muda
+  // quem você é na sala: o servidor continuaria te tratando como convidado)
+  const naSala = !!estado.meuId; // (sair da sala recarrega a página, então meuId só existe dentro dela)
+  const liberado = temConta() && (!naSala || !!estado.pessoas.get(estado.meuId)?.verificado);
   const ultra = el.selectQualidade.querySelector('option[value="ultra"]');
-  ultra.disabled = !temConta();
-  ultra.textContent = temConta() ? 'Ultra (4K, até 120 fps)' : 'Ultra (4K, até 120 fps) · só com conta';
-  if (!temConta() && el.selectQualidade.value === 'ultra') {
+  ultra.disabled = !liberado;
+  ultra.textContent = liberado ? 'Ultra (4K, até 120 fps)' : 'Ultra (4K, até 120 fps) · só com conta';
+  if (!liberado && el.selectQualidade.value === 'ultra') {
     el.selectQualidade.value = 'automatica';
     aplicarQualidadeEscolhida();
   }
@@ -654,6 +658,7 @@ function aplicarEstado(info) {
 
   estado.donoId = info.donoId;
   estado.limite = info.limites?.maxPessoas ?? estado.limite;
+  aplicarUltraSoComConta(); // entrou com ou sem ✔: libera ou bloqueia o Ultra
   aplicarTrancada(info.trancada);
   renderizarPessoas();
 }
