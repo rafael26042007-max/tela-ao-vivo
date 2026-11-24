@@ -6,6 +6,7 @@ import { Sinalizacao } from './conexao.js?v=__VERSAO__';
 import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, CAMERA, codecsDisponiveis } from './p2p.js?v=__VERSAO__';
 import { prepararFeedback, mostrarBotoesFeedback } from './feedback.js?v=__VERSAO__';
 import { prepararConta, mostrarConta, temConta, contaAtual, sessaoAtual } from './conta.js?v=__VERSAO__';
+import { prepararSeletorQualidade } from './seletor-qualidade.js?v=__VERSAO__';
 
 // =====================================================
 // Versões misturadas?
@@ -310,6 +311,9 @@ prepararConta({
     el.erroInicio.classList.add('destaque');
   },
 });
+
+// ---------- Qualidade: botão + painel (a <select> escondida continua sendo a "fonte da verdade") ----------
+prepararSeletorQualidade(el.selectQualidade);
 
 // -----------------------------------------------------
 // Benefícios da conta na tela

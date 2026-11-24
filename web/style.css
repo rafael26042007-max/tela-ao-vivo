@@ -458,3 +458,37 @@ input:focus, select:focus { outline: 2px solid var(--azul); outline-offset: 1px;
 .foto-pessoa { width: 18px; height: 18px; border-radius: 50%; flex: none; }
 .verificado { color: #60a5fa; font-size: 12px; cursor: help; }
 #campo-nome[readonly] { color: var(--texto-fraco); cursor: default; }
+
+/* ---------- Qualidade: botão + painel ---------- */
+.escondido-acessivel {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.qualidade { position: relative; display: flex; align-items: center; gap: 8px; color: var(--texto-fraco); font-size: 13px; }
+.seletor-qualidade { padding: 6px 10px; font-size: 13px; font-weight: 500; display: inline-flex; gap: 6px; align-items: center; }
+.seletor-qualidade .seta { color: var(--texto-fraco); font-size: 11px; }
+.seletor-qualidade[aria-expanded="true"] { border-color: var(--texto-fraco); }
+.painel-qualidade {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: 320px; max-width: calc(100vw - 24px);
+  background: var(--painel); border: 1px solid var(--borda); border-radius: 10px; padding: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.painel-qualidade[hidden] { display: none; }
+.opcao-qualidade {
+  display: grid; grid-template-columns: 16px 1fr auto; column-gap: 10px; align-items: center; text-align: left;
+  width: 100%; padding: 8px 10px; border: 0; border-radius: 6px; background: none; color: var(--texto);
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+.opcao-qualidade:hover:not(:disabled), .opcao-qualidade:focus-visible { background: var(--painel-2); outline: none; }
+/* bolinha de escolha (vazia / cheia) */
+.opcao-qualidade::before {
+  content: ""; grid-row: span 2; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--texto-fraco);
+}
+.opcao-qualidade[aria-selected="true"]::before { border-color: var(--destaque); background: radial-gradient(var(--destaque) 45%, transparent 50%); }
+.opcao-qualidade .nome { font-weight: 600; }
+.opcao-qualidade .detalhe { color: var(--texto-fraco); font-size: 12px; justify-self: end; }
+.opcao-qualidade .uso { grid-column: 2 / 4; color: var(--texto-fraco); font-size: 12px; }
+.opcao-qualidade:disabled { cursor: not-allowed; }
+.opcao-qualidade:disabled .nome, .opcao-qualidade:disabled .detalhe { opacity: .5; }
+.opcao-qualidade:disabled::before { content: "🔒"; border: 0; width: auto; height: auto; font-size: 11px; }

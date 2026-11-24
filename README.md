@@ -21,7 +21,8 @@ e nada é gravado. Grátis, sem instalar nada, e a conta é **opcional**.
 **Transmitir e assistir**
 - **Várias pessoas transmitindo** ao mesmo tempo; dá pra **transmitir e assistir com o mesmo usuário**
 - **Qualidade Automática** (padrão): sobe e desce sozinha conforme o PC e a internet de quem transmite aguentam
-- Ou escolha na mão: **Mínima, Economia, Equilibrado, Fluido** ou **Ultra (4K, até 120 fps)**, que pede confirmação antes
+- Ou escolha na mão: **Mínima, Economia, Equilibrado, Fluido** ou **Ultra (4K, até 120 fps)**, que pede confirmação antes.
+  A escolha é num painel que mostra a resolução, o FPS e pra que serve cada uma
 - A prévia mostra **o que está saindo de verdade** (ex: "Enviando 1920×1080 · 15 fps · limitado por internet")
 - **Áudio** da aba/sistema (opcional); codec em "Avançado"
 - **📌 Tela em destaque**: uma tela grande e as outras numa coluna ao lado
@@ -201,6 +202,7 @@ web/                    # vai pro GitHub Pages (não precisa compilar)
     ├── automatico.js   # decide quando a qualidade Automática sobe ou desce
     ├── feedback.js     # janela "O que você achou?"
     ├── conta.js        # "Entrar com Discord" e "Minha conta" (corrigir, baixar, apagar)
+    ├── seletor-qualidade.js  # botão "Qualidade ▾" + painel com cada opção explicada
     └── conexao.js      # WebSocket com reconexão automática
 render.yaml             # configuração do Render
 .github/workflows/pages.yml  # publica web/ no GitHub Pages (empacotar → publicar)
