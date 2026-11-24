@@ -5,7 +5,7 @@
 import { Sinalizacao } from './conexao.js?v=__VERSAO__';
 import { MalhaP2P, QUALIDADES, CAPTURA_AUTOMATICA, CAMERA, codecsDisponiveis } from './p2p.js?v=__VERSAO__';
 import { prepararFeedback, mostrarBotoesFeedback } from './feedback.js?v=__VERSAO__';
-import { prepararConta, mostrarConta, temConta, contaAtual, sessaoAtual } from './conta.js?v=__VERSAO__';
+import { prepararConta, mostrarConta, temConta, contaAtual, sessaoAtual, loginDisponivel } from './conta.js?v=__VERSAO__';
 import { prepararSeletorQualidade } from './seletor-qualidade.js?v=__VERSAO__';
 
 // =====================================================
@@ -333,7 +333,8 @@ function aplicarUltraSoComConta() {
   // Na sala, vale o que o SERVIDOR sabe: entrou com o ✔? (logar depois, em outra aba, não muda
   // quem você é na sala: o servidor continuaria te tratando como convidado)
   const naSala = !!estado.meuId; // (sair da sala recarrega a página, então meuId só existe dentro dela)
-  const liberado = temConta() && (!naSala || !!estado.pessoas.get(estado.meuId)?.verificado);
+  // Sem login no servidor: ninguém tem conta, então ninguém é limitado (o servidor também não limita)
+  const liberado = !loginDisponivel() || (temConta() && (!naSala || !!estado.pessoas.get(estado.meuId)?.verificado));
   const ultra = el.selectQualidade.querySelector('option[value="ultra"]');
   ultra.disabled = !liberado;
   ultra.textContent = liberado ? 'Ultra (4K, até 120 fps)' : 'Ultra (4K, até 120 fps) · só com conta';

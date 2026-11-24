@@ -16,8 +16,11 @@ let aoMudarConta = () => {}; // o app atualiza a tela (Ultra, sala fixa, nome tr
 let versaoTermos = null;
 let conta = null; // { nome, foto, salaFixa } de quem está logado
 let desligada = false; // página sem os elementos da conta (não mexe em nada)
+let ultimaSaude = null; // última resposta do /saude (login disponível? versão da política)
 
 // ---------- Pro resto do site ----------
+// O servidor tem login configurado? (sem login, ninguém tem conta, então nada fica "só com conta")
+export const loginDisponivel = () => !desligada && ultimaSaude?.login === true;
 // (confere também se a sessão ainda existe: outra aba pode ter saído da conta)
 export const temConta = () => conta !== null && !!ler(CHAVE_SESSAO);
 export const contaAtual = () => conta;
@@ -201,8 +204,6 @@ export function prepararConta(opcoes) {
 // -----------------------------------------------------
 // Chamado depois do /saude: mostra o bloco da conta se o login estiver disponível
 // -----------------------------------------------------
-let ultimaSaude = null;
-
 export async function mostrarConta(saude) {
   if (desligada) return;
   ultimaSaude = saude;
